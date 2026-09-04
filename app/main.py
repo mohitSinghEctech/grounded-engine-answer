@@ -2,9 +2,11 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from openai import AsyncOpenAI
 
-from app.routers import health
+from app.routers import health, ask
 from app.config import get_settings
+from app.services.openai_compatible import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +15,26 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Application starting...")
     
-    app.state.gemini_client = "GEMINI CLIENT"
+    settings = get_settings()
+    
+    client = AsyncOpenAI(
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+    )
+    
+    llm_client = OpenAICompatibleClient(
+        client=client,
+        settings=settings
+    )
+    
+    app.state.llm_client = llm_client
     
     yield
     
     # Shutdown
     logger.info("Application shutting down...")
     
-    app.state.gemini_client = None
+    await client.close()
 
 def create_app() -> FastAPI:
     settings = get_settings()
@@ -38,4 +52,5 @@ def create_app() -> FastAPI:
     )
     
     app.include_router(health.router)
+    app.include_router(ask.router)
     return app

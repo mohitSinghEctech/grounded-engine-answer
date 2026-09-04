@@ -27,7 +27,7 @@ class AskRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "question": "What is FastAPI in one sentence",
-                max_tokens: 300,
+                "max_tokens": 300,
             }
         }
     )

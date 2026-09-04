@@ -1,4 +1,6 @@
 from fastapi import Request
 
-def get_gemini_client(request: Request):
-    return request.app.state.gemini_client
+from app.services.base import LLMClient
+
+def get_llm_client(request: Request) -> LLMClient:
+    return request.app.state.llm_client
