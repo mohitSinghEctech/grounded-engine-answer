@@ -12,14 +12,32 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings = get_settings()
+        
+    logging.basicConfig(
+        level=settings.log_level,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+    
+    for name in {
+        "fastapi",
+        "httpx",
+        "httpx2",
+        "openai",
+        "httpcore",
+        "httpcore2"
+    }:
+        logging.getLogger(name).setLevel(settings.log_level)
+    
+        
     # Startup
     logger.info("Application starting...")
-    
-    settings = get_settings()
     
     client = AsyncOpenAI(
         api_key=settings.llm_api_key,
         base_url=settings.llm_base_url,
+        timeout=settings.request_timeout_seconds,
+        max_retries=0,
     )
     
     llm_client = OpenAICompatibleClient(
@@ -38,11 +56,6 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    
-    logging.basicConfig(
-    level=settings.log_level,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
     
     app = FastAPI(
         title=settings.app_name,

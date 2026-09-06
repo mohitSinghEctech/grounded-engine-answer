@@ -7,6 +7,9 @@ class LLMResult:
     model: str
     prompt_tokens: int
     completion_tokens: int
+    reasoning_tokens: int
+    total_tokens: int
+    finish_reason: str
     
 class LLMClient(Protocol):
     async def generate(

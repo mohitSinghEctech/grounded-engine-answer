@@ -17,9 +17,9 @@ class AskRequest(BaseModel):
     )
     
     max_tokens: int = Field(
-        default=500,
+        default=2000,
         ge=1,
-        le=2000,
+        le=8000,
         description="Maximum tokens to generate",
     )
     
@@ -38,6 +38,9 @@ class AskResponse(BaseModel):
     latency_ms: int
     prompt_tokens: int
     completion_tokens: int
+    reasoning_tokens: int
+    total_tokens: int
+    finish_reason: str
     
 
 class ErrorResponse(BaseModel):
