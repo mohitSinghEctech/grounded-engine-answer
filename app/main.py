@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
 
 
 async def app_error_handler(request: Request, exc: AppError):
-    request_id = request.state.request_id
+    request_id = getattr(request.state, "request_id", "-")
 
     return JSONResponse(
         status_code=exc.status_code,
@@ -58,7 +58,7 @@ async def validation_error_handler(
     request: Request,
     exc: RequestValidationError,
 ):
-    request_id = request.state.request_id
+    request_id = getattr(request.state, "request_id", "-")
 
     details = [
         {key: value for key, value in error.items() if key not in {"url", "ctx"}}
@@ -77,7 +77,7 @@ async def validation_error_handler(
 
 
 async def generic_exception_handler(request: Request, exc: Exception):
-    request_id = request.state.request_id
+    request_id = getattr(request.state, "request_id", "-")
 
     logger.exception(
         "Unhandled application exception", extra={"request_id": request_id}
