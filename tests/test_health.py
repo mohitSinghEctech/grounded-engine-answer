@@ -1,13 +1,5 @@
-from fastapi.testclient import TestClient
-
-from app.main import create_app
-
-
-def test_health():
-    app = create_app()
-
-    with TestClient(app) as client:
-        response = client.get("/health")
+def test_health(client):
+    response = client.get("/health")
 
     assert response.status_code == 200
 
@@ -17,3 +9,13 @@ def test_health():
     assert "version" in data
     assert "environment" in data
     assert "x-request-id" in response.headers
+
+
+def test_health_request_id_is_preserved(client):
+    response = client.get(
+        "/health",
+        headers={"X-Request-ID": "test-123"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "test-123"

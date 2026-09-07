@@ -1,5 +1,5 @@
-import logging
 import asyncio
+import logging
 import time
 
 from openai import (
@@ -11,14 +11,14 @@ from openai import (
 )
 
 from app.config import Settings
-from app.services.base import LLMClient, LLMResult
 from app.errors import (
     InvalidUpstreamResponse,
-    UpstreamTimeout,
     UpstreamRateLimited,
+    UpstreamTimeout,
     UpstreamUnavailable,
 )
 from app.retry import calculate_retry_delay
+from app.services.base import LLMResult
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +123,7 @@ class OpenAICompatibleClient:
 
     async def generate(self, prompt: str, max_tokens: int) -> LLMResult:
         retry_start = time.perf_counter()
-        
+
         for attempt in range(self.settings.max_retries + 1):
             try:
                 return await self._generate_once(prompt=prompt, max_tokens=max_tokens)
@@ -150,10 +150,8 @@ class OpenAICompatibleClient:
                     delay_source = "exponential-backoff"
 
                 elapsed = time.perf_counter() - retry_start
-                remaining_time = (
-                    self.settings.max_retry_time_seconds - elapsed
-                )
-                
+                remaining_time = self.settings.max_retry_time_seconds - elapsed
+
                 if delay > remaining_time:
                     logger.warning(
                         "LLM retry skipped; retry time budget exceeded | "
@@ -165,7 +163,7 @@ class OpenAICompatibleClient:
                         delay,
                     )
                     raise
-                
+
                 logger.warning(
                     "LLM request failed; retrying | "
                     "attempt=%s | max_retries=%s | "

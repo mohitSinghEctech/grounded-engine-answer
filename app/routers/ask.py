@@ -4,8 +4,8 @@ import time
 from fastapi import APIRouter, Depends
 
 from app.dependencies import get_llm_client
-from app.services.base import LLMClient
 from app.schemas import AskRequest, AskResponse, ErrorResponse
+from app.services.base import LLMClient
 
 logger = logging.getLogger(__name__)
 

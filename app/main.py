@@ -6,13 +6,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
 
-from app.routers import health, ask
 from app.config import get_settings
-from app.services.openai_compatible import OpenAICompatibleClient
-from app.middleware import RequestIDMiddleware
 from app.errors import AppError
-from app.schemas import ErrorResponse
 from app.logging_config import configure_logging
+from app.middleware import RequestIDMiddleware
+from app.routers import ask, health
+from app.schemas import ErrorResponse
+from app.services.openai_compatible import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
 
