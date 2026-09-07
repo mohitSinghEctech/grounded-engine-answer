@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, ConfigDict, StringConstraints
 
@@ -11,18 +11,19 @@ Question = Annotated[
     ),
 ]
 
+
 class AskRequest(BaseModel):
     question: Question = Field(
         description="The user's question",
     )
-    
+
     max_tokens: int = Field(
         default=2000,
         ge=1,
         le=8000,
         description="Maximum tokens to generate",
     )
-    
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -31,7 +32,8 @@ class AskRequest(BaseModel):
             }
         }
     )
-    
+
+
 class AskResponse(BaseModel):
     answer: str
     model: str
@@ -41,9 +43,10 @@ class AskResponse(BaseModel):
     reasoning_tokens: int
     total_tokens: int
     finish_reason: str
-    
+
 
 class ErrorResponse(BaseModel):
     error_code: str
     message: str
     request_id: str
+    details: list[dict[str, Any]] | None = None

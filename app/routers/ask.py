@@ -4,44 +4,58 @@ import time
 from fastapi import APIRouter, Depends
 
 from app.dependencies import get_llm_client
-from app.schemas import AskRequest, AskResponse
 from app.services.base import LLMClient
+from app.schemas import AskRequest, AskResponse, ErrorResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
-    tags=["ask"]
-)
+router = APIRouter(tags=["ask"])
+
 
 @router.post(
     "/ask",
     response_model=AskResponse,
+    responses={
+        422: {"model": ErrorResponse},
+        429: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
+    },
 )
 async def ask(
     request: AskRequest,
     llm_client: LLMClient = Depends(get_llm_client),
 ):
+    logger.info("Ask request started")
     start = time.perf_counter()
-    
+
     result = await llm_client.generate(
         prompt=request.question,
         max_tokens=request.max_tokens,
     )
-    
-    latency_ms = int(
-        (time.perf_counter() - start)*1000
-    )
-    
+
+    latency_ms = int((time.perf_counter() - start) * 1000)
+
     logger.info(
-        "LLM request | question=%s | latency_ms=%s | "
-        "prompt_tokens=%s | completion_tokens=%s | total_tokens=%s",
-        request.question[:200],
+        "LLM request completed | "
+        "model=%s | "
+        "latency_ms=%s | "
+        "prompt_tokens=%s | "
+        "completion_tokens=%s | "
+        "reasoning_tokens=%s | "
+        "total_tokens=%s | "
+        "finish_reason=%s",
+        result.model,
         latency_ms,
         result.prompt_tokens,
         result.completion_tokens,
+        result.reasoning_tokens,
         result.total_tokens,
+        result.finish_reason,
     )
-    
+
     return AskResponse(
         answer=result.text,
         model=result.model,
