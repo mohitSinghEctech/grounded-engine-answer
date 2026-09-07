@@ -1,10 +1,13 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.dependencies import get_llm_client
 from app.main import create_app
 from app.services.base import LLMResult
+from app.services.openai_compatible import OpenAICompatibleClient
 
 
 class FakeLLMClient:
@@ -70,8 +73,31 @@ def app(monkeypatch, fake_llm_client):
 
 @pytest.fixture
 def client(app):
-    with TestClient(
-        app,
-        raise_server_exceptions=False,
-    ) as test_client:
+    with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def client_no_raise(app):
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def settings():
+    return Settings(
+        llm_api_key="test-key",
+        llm_base_url="http://test-server/v1",
+    )
+
+
+@pytest.fixture
+def mock_client():
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock()
+    return client
+
+
+@pytest.fixture
+def llm_client(mock_client, settings):
+    return OpenAICompatibleClient(mock_client, settings)

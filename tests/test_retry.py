@@ -3,8 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.errors import InvalidUpstreamResponse, UpstreamUnavailable
+from app.errors import InvalidUpstreamResponse, UpstreamRateLimited, UpstreamUnavailable
 from app.retry import calculate_retry_delay
+from app.services.base import LLMResult
 from app.services.openai_compatible import OpenAICompatibleClient
 
 
@@ -125,16 +126,92 @@ def test_calculate_retry_delay():
 
 
 def test_calculate_retry_delay_has_jitter():
-    delay_1 = calculate_retry_delay(
-        attempt=0,
-        base_delay=0.5,
-        max_delay=5.0,
+    delays = [
+        calculate_retry_delay(
+            attempt=1,
+            base_delay=1.0,
+            max_delay=10.0,
+        )
+        for _ in range(20)
+    ]
+
+    assert len(set(delays)) > 1
+
+
+@pytest.mark.anyio
+async def test_retry_skips_retry_when_time_budget_exceeded(
+    llm_client,
+    monkeypatch,
+):
+    llm_client.settings.max_retry_time_seconds = 0.0
+
+    generate_once = AsyncMock(side_effect=UpstreamUnavailable())
+
+    monkeypatch.setattr(
+        llm_client,
+        "_generate_once",
+        generate_once,
     )
 
-    delay_2 = calculate_retry_delay(
-        attempt=0,
-        base_delay=0.5,
-        max_delay=5.0,
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.openai_compatible.asyncio.sleep",
+        sleep_mock,
     )
 
-    assert delay_1 != delay_2
+    with pytest.raises(UpstreamUnavailable):
+        await llm_client.generate(
+            prompt="What is FastAPI?",
+            max_tokens=100,
+        )
+
+    assert generate_once.await_count == 1
+    assert sleep_mock.await_count == 0
+
+
+@pytest.mark.anyio
+async def test_retry_uses_retry_after_value(
+    llm_client,
+    monkeypatch,
+):
+    errors = [
+        UpstreamRateLimited(retry_after_seconds=2.0),
+        None,
+    ]
+
+    generate_once = AsyncMock(
+        side_effect=[
+            errors[0],
+            LLMResult(
+                text="Success",
+                model="fake-model",
+                prompt_tokens=10,
+                completion_tokens=20,
+                reasoning_tokens=0,
+                total_tokens=30,
+                finish_reason="stop",
+            ),
+        ]
+    )
+
+    monkeypatch.setattr(
+        llm_client,
+        "_generate_once",
+        generate_once,
+    )
+
+    sleep_mock = AsyncMock()
+
+    monkeypatch.setattr(
+        "app.services.openai_compatible.asyncio.sleep",
+        sleep_mock,
+    )
+
+    result = await llm_client.generate(
+        prompt="What is FastAPI?",
+        max_tokens=100,
+    )
+
+    assert result.text == "Success"
+    assert generate_once.await_count == 2
+    sleep_mock.assert_awaited_once_with(2.0)

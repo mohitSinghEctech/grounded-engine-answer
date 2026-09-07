@@ -61,12 +61,12 @@ def test_upstream_errors(
 
 
 def test_unexpected_exception_returns_500(
-    client,
+    client_no_raise,
     fake_llm_client,
 ):
     fake_llm_client.error = ValueError("this should never be exposed")
 
-    response = client.post(
+    response = client_no_raise.post(
         "/ask",
         json={
             "question": "What is FastAPI?",
