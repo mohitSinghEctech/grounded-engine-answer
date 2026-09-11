@@ -97,12 +97,16 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     configure_logging(settings)
+    is_prod = settings.environment == "production"
 
     app = FastAPI(
         title=settings.app_name,
         description="AI Application for generating grounded answers",
         version=settings.app_version,
         lifespan=lifespan,
+        docs_url=None if is_prod else "/docs",
+        redoc_url=None if is_prod else "/redoc",
+        openapi_url=None if is_prod else "/openapi.json",
     )
 
     app.add_middleware(RequestIDMiddleware)
