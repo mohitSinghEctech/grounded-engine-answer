@@ -66,9 +66,7 @@ async def app_error_handler(request: Request, exc: AppError):
     )
 
 
-async def validation_error_handler(
-    request: Request, exc: RequestValidationError
-):
+async def validation_error_handler(request: Request, exc: RequestValidationError):
     request_id = getattr(request.state, "request_id", "-")
 
     return JSONResponse(

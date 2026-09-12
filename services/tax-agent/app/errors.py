@@ -9,30 +9,20 @@ class AppError(Exception):
 
 class GatewayTimeout(AppError):
     def __init__(self, message: str = "The LLM gateway timed out."):
-        super().__init__(
-            error_code="GATEWAY_TIMEOUT", 
-            message=message, 
-            status_code=504
-        )
+        super().__init__(error_code="GATEWAY_TIMEOUT", message=message, status_code=504)
 
 
 class GatewayUnavailable(AppError):
     def __init__(self, message: str = "The LLM gateway is unavailable."):
         super().__init__(
-            error_code="GATEWAY_UNAVAILABLE", 
-            message=message, 
-            status_code=503
+            error_code="GATEWAY_UNAVAILABLE", message=message, status_code=503
         )
 
 
 class InvalidGatewayResponse(AppError):
-    def __init__(
-        self, message: str = "The LLM gateway returned an invalid response."
-    ):
+    def __init__(self, message: str = "The LLM gateway returned an invalid response."):
         super().__init__(
-            error_code="INVALID_GATEWAY_RESPONSE", 
-            message=message, 
-            status_code=502
+            error_code="INVALID_GATEWAY_RESPONSE", message=message, status_code=502
         )
 
 

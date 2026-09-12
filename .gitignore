@@ -13,3 +13,4 @@ data/raw/
 data/parsed/
 data/index/
 !data/manifest.json
+data/*.db
