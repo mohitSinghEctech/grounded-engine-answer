@@ -1,10 +1,9 @@
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
-
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+# Source roots, so `app` is classified first-party in each service
+# rather than sorted as a third-party import.
+src = ["services/llm-gateway", "services/tax-agent"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

@@ -4,5 +4,12 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 .vscode/
 .DS_Store
+
+# Corpus and index: large, regenerable from data/manifest.json
+data/raw/
+data/parsed/
+data/index/
+!data/manifest.json
