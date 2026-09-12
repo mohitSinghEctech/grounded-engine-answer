@@ -1,0 +1,27 @@
+services:
+  llm-gateway:
+    build: ./services/llm-gateway
+    image: llm-gateway:dev
+    env_file:
+      - ./services/llm-gateway/.env
+    environment:
+      ENVIRONMENT: development
+      LOG_LEVEL: INFO
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  tax-agent:
+    build: ./services/tax-agent
+    image: tax-agent:dev
+    env_file:
+      - ./services/tax-agent/.env
+    environment:
+      LLM_GATEWAY_URL: http://llm-gateway:8000
+      ENVIRONMENT: development
+    ports:
+      - "8080:8080"
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
+    restart: unless-stopped

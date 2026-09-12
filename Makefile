@@ -1,6 +1,12 @@
 .PHONY: help install run test lint format format-check check up down logs build
 
 GATEWAY := services/llm-gateway
+TAX_AGENT := services/tax-agent
+
+# Absolute path, so targets work whether or not the venv is activated
+# and survive the `cd` in the test/run targets.
+VENV ?= .venv
+PY := $(CURDIR)/$(VENV)/bin/python
 
 help:
 	@echo "install        install llm-gateway dependencies"
@@ -14,23 +20,23 @@ help:
 	@echo "logs           follow all service logs"
 
 install:
-	python -m pip install --upgrade pip
-	pip install -r $(GATEWAY)/requirements.txt
+	$(PY) -m pip install --upgrade pip
+	$(PY) -m pip install -r $(GATEWAY)/requirements.txt
 
 run:
-	cd $(GATEWAY) && uvicorn app.main:create_app --factory --reload
+	cd $(GATEWAY) && $(PY) -m uvicorn app.main:create_app --factory --reload
 
 test:
-	cd $(GATEWAY) && pytest
+	cd $(GATEWAY) && $(PY) -m pytest
 
 lint:
-	ruff check .
+	$(PY) -m ruff check .
 
 format:
-	ruff format .
+	$(PY) -m ruff format .
 
 format-check:
-	ruff format --check .
+	$(PY) -m ruff format --check .
 
 check: lint format-check test
 
