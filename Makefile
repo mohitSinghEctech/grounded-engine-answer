@@ -37,7 +37,8 @@ ECR_URI     := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(ECR_REPO)
         format format-check check parse parse-2025 parse-1961 index index-1961 \
         index-naive index-embedded search corpus-stats build up down restart logs \
         ps shell-agent shell-gateway clean qdrant-up qdrant-ui collections \
-        aws-audit aws-spend ecr-login ecr-push ecs-start ecs-stop ecs-status
+        aws-audit aws-spend ecr-login ecr-push ecs-start ecs-stop ecs-status \
+        manifest manifest-check health ask api-search index-guidance reindex
 
 help: ## Show this help
 	@echo "Grounded Answer Engine"
@@ -85,6 +86,12 @@ format-check: ## Fail if anything is unformatted
 check: lint format-check test ## Lint, format check, and tests
 
 ##@ Corpus (local only - never runs in a container)
+manifest: ## Record source URLs and hashes for everything in data/raw
+	$(PY) $(BUILDER)/scripts/manifest.py --update
+
+manifest-check: ## Re-download sources and detect if the law was republished
+	$(PY) $(BUILDER)/scripts/manifest.py --check
+
 parse: parse-2025 parse-1961 ## Parse both Acts into data/corpus.db
 
 parse-2025: ## Parse the 2025 Act (536 sections + 16 schedules)
@@ -98,6 +105,18 @@ index: ## Embed both Acts into Qdrant (~3 cents, needs EMBEDDING_API_KEY)
 		--qdrant $(QDRANT) --collection $(COLLECTION)
 	$(PY) $(BUILDER)/scripts/index.py --strategy sections --db $(DB) --act ITA-1961 \
 		--qdrant $(QDRANT) --collection $(COLLECTION)
+
+index-guidance: ## Embed the department's guidance pages (separate act label)
+	$(PY) $(BUILDER)/scripts/index.py --strategy guidance \
+		--qdrant $(QDRANT) --collection $(COLLECTION)
+
+reindex: ## Delete both collections and rebuild everything from scratch
+	@$(PY) -c "from qdrant_client import QdrantClient; \
+		c = QdrantClient(url='$(QDRANT)'); \
+		[ (c.delete_collection(x.name), print('  dropped ' + x.name)) \
+		  for x in c.get_collections().collections ]"
+	$(MAKE) index
+	$(MAKE) index-guidance
 
 index-naive: ## Build the naive baseline collection, for A/B comparison
 	$(PY) $(BUILDER)/scripts/index.py --strategy naive --pdf $(PDF_2025) --act ITA-2025 \
@@ -174,11 +193,18 @@ health: ## Check both services are answering
 
 ask: ## Ask a question through the full stack. make ask Q="..."
 	@curl -s -X POST http://localhost:8080/ask -H 'Content-Type: application/json' \
-		-d '{"question":"$(Q)","max_tokens":500}' | $(PY) -m json.tool
+		-d '{"question":"$(Q)","max_tokens":2000}' | $(PY) -m json.tool
 
 api-search: ## Hit the /search endpoint. make api-search Q="..." [YEAR=2027]
-	@curl -s -X POST http://localhost:8080/search -H 'Content-Type: application/json' \
-		-d '{"question":"$(Q)"$(if $(YEAR),\,"tax_year":$(YEAR),)}' | $(PY) -m json.tool
+	@$(PY) -c "import json,os,urllib.request as u; \
+		body={'question':os.environ['Q']}; \
+		body.update({'tax_year':int(os.environ['YEAR'])} if os.environ.get('YEAR') else {}); \
+		r=u.urlopen(u.Request('http://localhost:8080/search', \
+		  json.dumps(body).encode(), {'Content-Type':'application/json'})); \
+		d=json.load(r); \
+		print(f\"tax_year={d['tax_year']} source={d['tax_year_source']}\"); \
+		[print(f\"  {p['score']:.4f}  {p['act']} s.{p['section_number']} - {(p['section_title'] or '')[:56]}\") \
+		 for p in d['passages']]" Q="$(Q)" YEAR="$(YEAR)"
 
 ##@ AWS
 aws-audit: ## List anything that costs money right now

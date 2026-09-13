@@ -22,6 +22,12 @@ from corpus import embedding, vectorstore  # noqa: E402
 
 def citation(payload: dict) -> str:
     """One line naming where a hit came from, or saying that it cannot."""
+    if payload.get("strategy") == "guidance":
+        return (
+            f"{payload.get('act')} {payload.get('section_number')} - "
+            f"{(payload.get('section_title') or '')[:60]}"
+        )
+
     if payload.get("strategy") != "sections":
         return (
             f"{payload.get('act')} chunk {payload.get('chunk_index')} "

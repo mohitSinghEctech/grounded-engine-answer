@@ -45,11 +45,13 @@ def point_id(chunk: Chunk) -> str:
     payload = chunk.payload
     unit = payload.get("section_number", payload.get("chunk_index"))
 
+    # A section number alone is not unique for guidance pages, where many
+    # headings share one file. Block disambiguates them; it is 0 elsewhere.
     return str(
         uuid.uuid5(
             uuid.NAMESPACE_URL,
-            f"{payload.get('act')}/{payload.get('strategy')}/"
-            f"{unit}/{payload.get('part', 0)}",
+            f"{payload.get('act')}/{payload.get('strategy')}/{unit}/"
+            f"{payload.get('block', 0)}/{payload.get('part', 0)}",
         )
     )
 

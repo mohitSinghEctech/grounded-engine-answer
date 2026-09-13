@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from corpus import chunking, embedding, vectorstore  # noqa: E402
+from corpus import chunking, embedding, guidance, vectorstore  # noqa: E402
 
 
 def summarise(strategy: str, chunks: list) -> None:
@@ -34,19 +34,28 @@ def summarise(strategy: str, chunks: list) -> None:
         f"median {lengths[len(lengths) // 2]}  max {lengths[-1]}"
     )
 
-    if strategy == "sections":
+    if strategy in ("sections", "guidance"):
         citable = len({c.payload["section_number"] for c in chunks})
-        print(f"sections    {citable} distinct, citable")
+        label = "sections" if strategy == "sections" else "pages"
+        print(f"{label:<11} {citable} distinct, citable")
     else:
         print("sections    0 - naive chunks cannot cite a section")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--strategy", choices=("naive", "sections"), required=True)
+    parser.add_argument(
+        "--strategy", choices=("naive", "sections", "guidance"), required=True
+    )
     parser.add_argument("--act", default="ITA-2025")
     parser.add_argument("--pdf", type=Path, help="naive strategy input")
     parser.add_argument("--db", type=Path, help="sections strategy input")
+    parser.add_argument(
+        "--guidance",
+        type=Path,
+        default=Path("data/raw/guidance"),
+        help="guidance strategy input directory",
+    )
     parser.add_argument("--qdrant", default="data/index", help="URL or path")
     parser.add_argument("--collection")
     parser.add_argument("--size", type=int, default=1000, help="naive chunk size")
@@ -56,7 +65,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.strategy == "sections":
+    if args.strategy == "guidance":
+        chunks = guidance.from_directory(args.guidance)
+    elif args.strategy == "sections":
         if not args.db:
             parser.error("--db is required for the sections strategy")
         chunks = chunking.from_sections(args.db, args.act)

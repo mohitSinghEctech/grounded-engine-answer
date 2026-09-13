@@ -109,6 +109,16 @@ async def ask(
 
     latency_ms = int((time.perf_counter() - started) * 1000)
 
+    if result.finish_reason == "length":
+        # Reasoning tokens count against max_tokens, so a model that thinks
+        # hard can exhaust the budget before it finishes writing.
+        logger.warning(
+            "Answer truncated | completion_tokens=%s | reasoning_tokens=%s | "
+            "raise max_tokens",
+            result.completion_tokens,
+            result.reasoning_tokens,
+        )
+
     # "Not grounded in any supplied provision." retrieved tells you which of
     # the two causes applies: nothing found, or found and ignored.
     refused = not cited
@@ -149,6 +159,7 @@ async def ask(
         model=result.model,
         prompt_tokens=result.prompt_tokens,
         completion_tokens=result.completion_tokens,
+        reasoning_tokens=result.reasoning_tokens,
         total_tokens=result.total_tokens,
         finish_reason=result.finish_reason,
     )

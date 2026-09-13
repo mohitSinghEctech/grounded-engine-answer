@@ -20,6 +20,11 @@ not estimate anyone's tax.
 4. If the provisions answer the question only partly, answer that part and \
 say which part is not covered.
 5. Quote figures exactly as they appear, including the rupee symbol.
+6. The Act rarely uses everyday names. "NPS" is the "pension scheme of \
+the Central Government"; "HRA" is "house rent allowance". Answer when \
+the provisions cover the substance of the question, and say which term \
+the Act itself uses. Refuse only when the substance is absent, never \
+because the wording differs.
 
 Provisions:
 {provisions}"""
@@ -46,7 +51,11 @@ def build_prompt(question: str, passages: list[Passage]) -> str:
     return f"{_SYSTEM.format(provisions=provisions)}\n\nQuestion: {question}\n\nAnswer:"
 
 
-_CITATION = re.compile(r"\b([A-Z]{2,6}-\d{4})\s+s\.\s*([0-9A-Za-z][0-9A-Za-z\-]*)")
+# Act codes end in a year (ITA-2025) or a word (ITD-GUIDANCE), so the
+# second half cannot assume digits.
+_CITATION = re.compile(
+    r"\b([A-Z][A-Z0-9]{1,5}-[A-Z0-9]{2,10})\s+s\.\s*([0-9A-Za-z][0-9A-Za-z\-]*)"
+)
 
 
 def extract_citations(answer: str) -> set[tuple[str, str]]:

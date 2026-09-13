@@ -8,6 +8,10 @@ class Generation:
     model: str
     prompt_tokens: int
     completion_tokens: int
+    # Thinking tokens. They count against max_tokens but are not part of the
+    # answer, so a small completion_tokens with a large total means the model
+    # spent its budget reasoning and ran out of room to write.
+    reasoning_tokens: int
     total_tokens: int
     finish_reason: str
 

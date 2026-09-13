@@ -51,6 +51,7 @@ class HttpLLMGateway:
                 model=payload["model"],
                 prompt_tokens=payload["prompt_tokens"],
                 completion_tokens=payload["completion_tokens"],
+                reasoning_tokens=payload.get("reasoning_tokens", 0),
                 total_tokens=payload["total_tokens"],
                 finish_reason=payload["finish_reason"],
             )
