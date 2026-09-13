@@ -4,7 +4,7 @@ import time
 from fastapi import APIRouter, Depends
 
 from app.dependencies import get_llm_client
-from app.schemas import AskRequest, AskResponse, ErrorResponse
+from app.schemas import AskRequest, AskResponse, ErrorResponse, GenerateRequest
 from app.services.base import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -65,4 +65,35 @@ async def ask(
         reasoning_tokens=result.reasoning_tokens,
         total_tokens=result.total_tokens,
         finish_reason=result.finish_reason,
+    )
+
+
+@router.post(
+    "/generate",
+    response_model=AskResponse,
+    responses={
+        422: {"model": ErrorResponse},
+        429: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
+    },
+)
+async def generate(
+    request: GenerateRequest,
+    llm_client: LLMClient = Depends(get_llm_client),
+):
+    """Send an assembled prompt to the model.
+
+    Same behaviour as /ask, but typed for a prompt rather than a user's
+    question: no 2000-character limit, because callers of this endpoint
+    build prompts from retrieved documents.
+    """
+    return await ask(
+        request=AskRequest.model_construct(
+            question=request.prompt,
+            max_tokens=request.max_tokens,
+        ),
+        llm_client=llm_client,
     )

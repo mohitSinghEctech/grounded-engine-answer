@@ -22,8 +22,8 @@ class HttpLLMGateway:
     async def generate(self, prompt: str, max_tokens: int) -> Generation:
         try:
             response = await self.client.post(
-                "/ask",
-                json={"question": prompt, "max_tokens": max_tokens},
+                "/generate",
+                json={"prompt": prompt, "max_tokens": max_tokens},
             )
 
         except httpx.TimeoutException as exc:

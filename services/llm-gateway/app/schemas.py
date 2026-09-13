@@ -12,6 +12,38 @@ Question = Annotated[
 ]
 
 
+Prompt = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=200_000,
+    ),
+]
+
+
+class GenerateRequest(BaseModel):
+    prompt: Prompt = Field(
+        description="A fully assembled prompt, sent to the model unchanged",
+    )
+
+    max_tokens: int = Field(
+        default=2000,
+        ge=1,
+        le=8000,
+        description="Maximum tokens to generate",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "prompt": "Answer only from the provisions below...",
+                "max_tokens": 500,
+            }
+        }
+    )
+
+
 class AskRequest(BaseModel):
     question: Question = Field(
         description="The user's question",

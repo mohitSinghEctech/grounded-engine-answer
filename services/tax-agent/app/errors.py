@@ -39,3 +39,17 @@ class GatewayRateLimited(AppError):
         )
 
         self.retry_after_seconds = retry_after_seconds
+
+
+class RetrieverUnavailable(AppError):
+    def __init__(self, message: str = "The document index is unavailable."):
+        super().__init__(
+            error_code="RETRIEVER_UNAVAILABLE", message=message, status_code=503
+        )
+
+
+class EmbeddingFailed(AppError):
+    def __init__(self, message: str = "Could not embed the question."):
+        super().__init__(
+            error_code="EMBEDDING_FAILED", message=message, status_code=502
+        )

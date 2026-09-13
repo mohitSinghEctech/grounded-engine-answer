@@ -35,4 +35,3 @@ docker-compose*.yml
 tests/
 requirements-dev.txt
 README.md
-scripts/
