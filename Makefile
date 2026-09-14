@@ -38,7 +38,7 @@ ECR_URI     := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(ECR_REPO)
         index-naive index-embedded search corpus-stats build up down restart logs \
         ps shell-agent shell-gateway clean qdrant-up qdrant-ui collections \
         aws-audit aws-spend ecr-login ecr-push ecs-start ecs-stop ecs-status \
-        manifest manifest-check health ask api-search index-guidance reindex
+        manifest manifest-check health ask api-search index-guidance reindex corpus-export
 
 help: ## Show this help
 	@echo "Grounded Answer Engine"
@@ -136,6 +136,10 @@ search: ## Query the index. make search Q="..." [YEAR=2027] [ACT=ITA-1961]
 		--collection $(COLLECTION) --top-k $(TOP_K) \
 		$(if $(YEAR),--tax-year $(YEAR),) $(if $(ACT),--act $(ACT),)
 
+corpus-export: ## Dump corpus.db to readable files in data/export/
+	$(PY) $(BUILDER)/scripts/export.py --format index
+	$(PY) $(BUILDER)/scripts/export.py --format jsonl
+
 corpus-stats: ## Section and character counts per Act in corpus.db
 	@$(PY) -c "import sqlite3; \
 		[print(f'  {a:<10} {n:>4} sections  {c:>10,} chars') \
@@ -194,6 +198,18 @@ health: ## Check both services are answering
 ask: ## Ask a question through the full stack. make ask Q="..."
 	@curl -s -X POST http://localhost:8080/ask -H 'Content-Type: application/json' \
 		-d '{"question":"$(Q)","max_tokens":2000}' | $(PY) -m json.tool
+
+##@ Evaluation
+eval: ## Score the question set. make eval [OUT=...] [DELAY=3] [CATEGORY=...]
+	$(PY) eval/run.py --delay $(or $(DELAY),3) \
+		--out $(or $(OUT),eval/runs/latest.csv) \
+		$(if $(CATEGORY),--category $(CATEGORY),)
+
+eval-smoke: ## One question per run, to check the harness is wired up
+	$(PY) eval/run.py --limit 1 --out eval/runs/smoke.csv
+
+eval-baseline: ## The run everything later is compared against
+	$(PY) eval/run.py --delay 3 --out eval/runs/baseline.csv
 
 api-search: ## Hit the /search endpoint. make api-search Q="..." [YEAR=2027]
 	@$(PY) -c "import json,os,urllib.request as u; \

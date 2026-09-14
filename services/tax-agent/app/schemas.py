@@ -11,6 +11,27 @@ Question = Annotated[
     ),
 ]
 
+# Why an answer was withheld. "refused" alone cannot distinguish "I could
+# not" from "I should not", and the two need different fixes: the first is a
+# retrieval problem, the second a scope problem.
+#
+#   nothing_retrieved    the index returned no provision above the floor
+#   not_grounded         provisions were supplied and the answer cited none
+#   out_of_scope         answerable from the corpus, but asks for advice or
+#                        a computed liability, which rule 3 forbids
+#   needs_clarification  a bare section number that means different law in
+#                        each Act, so the year has to be settled first
+#
+# The pipeline currently determines the first two structurally. The last two
+# need a decision taken before retrieval and are not emitted yet.
+RefusalReason = Literal[
+    "none",
+    "nothing_retrieved",
+    "not_grounded",
+    "out_of_scope",
+    "needs_clarification",
+]
+
 
 class AskRequest(BaseModel):
     question: Question = Field(
@@ -51,7 +72,12 @@ class Citation(BaseModel):
 
 class AskResponse(BaseModel):
     answer: str
+
+    # refused is derived from refusal_reason, never set independently, so the
+    # two can never disagree.
     refused: bool
+    refusal_reason: RefusalReason
+
     citations: list[Citation]
     corpus_date: str
 
@@ -60,6 +86,13 @@ class AskResponse(BaseModel):
     retrieved: int
 
     latency_ms: int
+
+    # Where the time went. retrieval_ms covers embedding the question and
+    # querying Qdrant; llm_ms is the gateway round trip. They should very
+    # nearly sum to latency_ms - anything left over is this service's own
+    # work, and it should be small.
+    retrieval_ms: int
+    llm_ms: int | None = None
 
     # Absent on a refusal: no model is called, so there is nothing to report.
     model: str | None = None

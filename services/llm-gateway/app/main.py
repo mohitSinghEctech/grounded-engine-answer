@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
 
+from app import vendors
 from app.config import get_settings
 from app.errors import AppError
 from app.logging_config import configure_logging
@@ -24,14 +25,26 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Application starting...")
 
+    # Resolved once, here, so an unknown vendor fails the container's health
+    # check rather than every /generate request.
+    vendor = vendors.resolve(settings.llm_vendor)
+    model = settings.llm_model or vendor.default_model
+
+    vendors.describe(vendor, model)
+
     client = AsyncOpenAI(
         api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
+        base_url=settings.llm_base_url or vendor.base_url,
         timeout=settings.request_timeout_seconds,
         max_retries=0,
     )
 
-    llm_client = OpenAICompatibleClient(client=client, settings=settings)
+    llm_client = OpenAICompatibleClient(
+        client=client,
+        settings=settings,
+        vendor=vendor,
+        model=model,
+    )
 
     app.state.llm_client = llm_client
 

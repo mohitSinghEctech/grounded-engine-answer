@@ -16,6 +16,11 @@ services:
     environment:
       ENVIRONMENT: development
       LOG_LEVEL: INFO
+      # Gemini flash currently returns in 6-21s for these prompts, so 30s
+      # timed out roughly a third of calls. Each layer must allow more than
+      # the one below it or the outer layer gives up first and reports a
+      # timeout from the wrong place: model 60 < gateway 75 < harness 90.
+      REQUEST_TIMEOUT_SECONDS: 60
     expose:
       - "8000"
     restart: unless-stopped
@@ -29,6 +34,10 @@ services:
       LLM_GATEWAY_URL: http://llm-gateway:8000
       QDRANT_URL: http://qdrant:6333
       ENVIRONMENT: development
+      # Headroom over the gateway's own 60s upstream timeout, so a slow
+      # model surfaces as GATEWAY_TIMEOUT from the layer that actually
+      # waited rather than as a race between the two.
+      LLM_GATEWAY_TIMEOUT_SECONDS: 75
     ports:
       - "8080:8080"
     depends_on:

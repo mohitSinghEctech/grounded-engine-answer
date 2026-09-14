@@ -19,23 +19,39 @@ from app.errors import (
 )
 from app.retry import calculate_retry_delay
 from app.services.base import LLMResult
+from app.vendors import Vendor, completion_kwargs
 
 logger = logging.getLogger(__name__)
 
 
 class OpenAICompatibleClient:
-    def __init__(self, client: AsyncOpenAI, settings: Settings):
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        settings: Settings,
+        vendor: Vendor,
+        model: str,
+    ):
         self.client = client
         self.settings = settings
+
+        # Resolved at startup. The client never reads llm_model directly:
+        # that setting may be None, meaning "the vendor's cheap default".
+        self.vendor = vendor
+        self.model = model
 
     async def _generate_once(self, prompt: str, max_tokens: int) -> LLMResult:
 
         try:
             response = await self.client.chat.completions.create(
-                model=self.settings.llm_model,
+                model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                reasoning_effort=self.settings.reasoning_effort,
+                **completion_kwargs(
+                    vendor=self.vendor,
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    reasoning_effort=self.settings.reasoning_effort,
+                ),
             )
 
         except APITimeoutError as exc:

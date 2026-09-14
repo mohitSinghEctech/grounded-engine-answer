@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends
 from app.config import Settings, get_settings
 from app.dependencies import get_llm_gateway, get_retriever
 from app.prompt import REFUSAL, build_prompt, split_citations
-from app.schemas import AskRequest, AskResponse, Citation, ErrorResponse
+from app.schemas import (
+    AskRequest,
+    AskResponse,
+    Citation,
+    ErrorResponse,
+    RefusalReason,
+)
 from app.services.base import LLMGateway, Passage, Retriever
 from app.tax_year import extract_tax_year
 
@@ -83,18 +89,24 @@ async def ask(
         return AskResponse(
             answer=REFUSAL,
             refused=True,
+            refusal_reason="nothing_retrieved",
             citations=[],
             corpus_date=settings.corpus_date,
             tax_year=tax_year,
             tax_year_source=tax_year_source,
             retrieved=0,
             latency_ms=int((time.perf_counter() - started) * 1000),
+            retrieval_ms=retrieval_ms,
         )
+
+    generation_started = time.perf_counter()
 
     result = await gateway.generate(
         prompt=build_prompt(request.question, passages),
         max_tokens=request.max_tokens,
     )
+
+    llm_ms = int((time.perf_counter() - generation_started) * 1000)
 
     cited, unsupported = split_citations(result.text, passages)
 
@@ -119,19 +131,23 @@ async def ask(
             result.reasoning_tokens,
         )
 
-    # "Not grounded in any supplied provision." retrieved tells you which of
-    # the two causes applies: nothing found, or found and ignored.
-    refused = not cited
+    # Provisions were supplied, so a refusal here means the model was given
+    # law and cited none of it - a different defect from finding nothing, and
+    # worth telling apart in a score.
+    refusal_reason: RefusalReason = "none" if cited else "not_grounded"
+    refused = refusal_reason != "none"
 
     logger.info(
-        "Ask completed | refused=%s | retrieved=%s | cited=%s | unsupported=%s | "
-        "retrieval_ms=%s | latency_ms=%s | model=%s | total_tokens=%s | "
-        "finish_reason=%s",
+        "Ask completed | refused=%s | refusal_reason=%s | retrieved=%s | cited=%s | "
+        "unsupported=%s | retrieval_ms=%s | llm_ms=%s | latency_ms=%s | "
+        "model=%s | total_tokens=%s | finish_reason=%s",
         refused,
+        refusal_reason,
         len(passages),
         len(cited),
         len(unsupported),
         retrieval_ms,
+        llm_ms,
         latency_ms,
         result.model,
         result.total_tokens,
@@ -141,6 +157,7 @@ async def ask(
     return AskResponse(
         answer=result.text,
         refused=refused,
+        refusal_reason=refusal_reason,
         citations=[
             Citation(
                 act=p.act,
@@ -156,6 +173,8 @@ async def ask(
         tax_year_source=tax_year_source,
         retrieved=len(passages),
         latency_ms=latency_ms,
+        retrieval_ms=retrieval_ms,
+        llm_ms=llm_ms,
         model=result.model,
         prompt_tokens=result.prompt_tokens,
         completion_tokens=result.completion_tokens,

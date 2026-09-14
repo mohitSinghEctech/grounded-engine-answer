@@ -1,4 +1,8 @@
 .env
+# Any variant: .env.bak.20260914, .env.local, .env.openai. These hold
+# live API keys and a bare `.env` rule does not match them.
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.pyc
@@ -14,3 +18,5 @@ data/parsed/
 data/index/
 !data/manifest.json
 data/*.db
+data/export/
+eval/runs/

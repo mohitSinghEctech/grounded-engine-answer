@@ -1,4 +1,5 @@
 import logging
+import time
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
@@ -114,7 +115,14 @@ class QdrantRetriever:
         top_k: int,
         tax_year: int | None = None,
     ) -> list[Passage]:
+        # Embedding is a network call to a third party; the Qdrant query is
+        # local. Timed apart so a slow retrieval can be blamed on the right
+        # one instead of on "retrieval".
+        embed_started = time.perf_counter()
         vector = await self._embed(question)
+        embed_ms = int((time.perf_counter() - embed_started) * 1000)
+
+        search_started = time.perf_counter()
 
         try:
             response = await self.qdrant.query_points(
@@ -131,17 +139,22 @@ class QdrantRetriever:
             )
             raise RetrieverUnavailable() from exc
 
+        search_ms = int((time.perf_counter() - search_started) * 1000)
+
         floor = self.settings.retrieval_min_score
         passages = [
             self._to_passage(point) for point in response.points if point.score >= floor
         ]
 
         logger.info(
-            "Retrieval completed | hits=%s | kept=%s | min_score=%.2f | tax_year=%s",
+            "Retrieval completed | hits=%s | kept=%s | min_score=%.2f | "
+            "tax_year=%s | embed_ms=%s | search_ms=%s",
             len(response.points),
             len(passages),
             floor,
             tax_year,
+            embed_ms,
+            search_ms,
         )
 
         return passages

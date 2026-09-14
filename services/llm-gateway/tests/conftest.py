@@ -8,6 +8,7 @@ from app.dependencies import get_llm_client
 from app.main import create_app
 from app.services.base import LLMResult
 from app.services.openai_compatible import OpenAICompatibleClient
+from app.vendors import resolve
 
 
 class FakeLLMClient:
@@ -99,5 +100,15 @@ def mock_client():
 
 
 @pytest.fixture
-def llm_client(mock_client, settings):
-    return OpenAICompatibleClient(mock_client, settings)
+def vendor():
+    return resolve("openai")
+
+
+@pytest.fixture
+def llm_client(mock_client, settings, vendor):
+    return OpenAICompatibleClient(
+        mock_client,
+        settings,
+        vendor=vendor,
+        model="gpt-4.1-mini",
+    )

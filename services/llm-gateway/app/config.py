@@ -11,9 +11,15 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
-    llm_model: str = "gemini-3.7-flash"
+    # Which provider, and which of its models. Both resolve through
+    # app/vendors.py, which knows what each combination accepts; leave
+    # the model unset to get that vendor's cheapest capable one.
+    llm_vendor: str = "openai"
+    llm_model: str | None = None
     llm_api_key: str
-    llm_base_url: str
+
+    # Optional override. Normally the vendor supplies its own endpoint.
+    llm_base_url: str | None = None
     reasoning_effort: Literal["none", "low", "medium", "high"] = "low"
 
     request_timeout_seconds: float = 30.0

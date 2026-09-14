@@ -7,6 +7,7 @@ from app.errors import InvalidUpstreamResponse, UpstreamRateLimited, UpstreamUna
 from app.retry import calculate_retry_delay
 from app.services.base import LLMResult
 from app.services.openai_compatible import OpenAICompatibleClient
+from app.vendors import resolve
 
 
 def make_settings():
@@ -23,6 +24,8 @@ async def test_retry_succeeds_after_two_failures(monkeypatch):
     client = OpenAICompatibleClient(
         client=None,
         settings=make_settings(),
+        vendor=resolve("openai"),
+        model="gpt-4.1-mini",
     )
 
     result = SimpleNamespace(
@@ -71,6 +74,8 @@ async def test_invalid_upstream_response_is_not_retried(monkeypatch):
     client = OpenAICompatibleClient(
         client=None,
         settings=make_settings(),
+        vendor=resolve("openai"),
+        model="gpt-4.1-mini",
     )
 
     generate_once = AsyncMock(side_effect=InvalidUpstreamResponse())
