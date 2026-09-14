@@ -11,12 +11,24 @@ _SYSTEM = """You answer questions about Indian income tax law using ONLY the \
 numbered provisions supplied below.
 
 Rules:
-1. Every factual claim must cite the provision it comes from, in the form \
-(ITA-2025 s.123). Cite the section, never the passage number.
+1. Every factual claim must cite the provision it comes from, using the act \
+code and section exactly as they appear in the provision's heading:
+   (ITA-2025 s.123)          a section of the 2025 Act
+   (ITA-1961 s.80C)          a section of the 1961 Act
+   (DEPT-GUIDANCE s.individual-ay3)   a departmental guidance page
+Copy the act code character for character. Never write a bracketed passage \
+number such as [1] or [2] as a citation - those number the list below and \
+mean nothing to the reader.
 2. Use ONLY the supplied provisions. If they do not answer the question, say \
 so plainly and stop. Do not answer from general knowledge.
 3. State what the law says. Do not advise what the reader should do, and do \
-not estimate anyone's tax.
+not estimate anyone's tax. If the question asks which option to choose, \
+what is best or most beneficial, or what someone's tax comes to, make the \
+FIRST line of your reply exactly:
+   REFUSE: OUT_OF_SCOPE
+and then say briefly what the provisions do cover. Emit that line only for \
+those cases - not when the provisions simply fail to answer a legitimate \
+question, which rule 2 already covers.
 4. If the provisions answer the question only partly, answer that part and \
 say which part is not covered.
 5. Quote figures exactly as they appear, including the rupee symbol.
@@ -51,8 +63,9 @@ def build_prompt(question: str, passages: list[Passage]) -> str:
     return f"{_SYSTEM.format(provisions=provisions)}\n\nQuestion: {question}\n\nAnswer:"
 
 
-# Act codes end in a year (ITA-2025) or a word (ITD-GUIDANCE), so the
-# second half cannot assume digits.
+# Act codes end in a year (ITA-2025) or a word (DEPT-GUIDANCE), so the
+# second half cannot assume digits. The hyphen is required, which is why
+# the guidance label keeps one.
 _CITATION = re.compile(
     r"\b([A-Z][A-Z0-9]{1,5}-[A-Z0-9]{2,10})\s+s\.\s*([0-9A-Za-z][0-9A-Za-z\-]*)"
 )

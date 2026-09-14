@@ -18,7 +18,14 @@ from pathlib import Path
 from corpus.models import Chunk
 
 #: The label these chunks are indexed under. Deliberately not an Act.
-ACT = "ITD-GUIDANCE"
+#:
+#: Was ITD-GUIDANCE, one letter from the ITA- prefix the statute uses, and
+#: gpt-4.1-mini reliably wrote "ITA-GUIDANCE" instead - a citation for a
+#: provision it was never given, which split_citations then discarded. Six
+#: correct answers in the first baseline scored as refusals because of it.
+#: DEPT- shares no prefix with ITA- and still has the hyphen the citation
+#: regex requires.
+ACT = "DEPT-GUIDANCE"
 
 #: Separates the provenance header written by fetch_guidance.py.
 HEADER_RULE = "-" * 72

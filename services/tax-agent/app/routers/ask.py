@@ -13,6 +13,7 @@ from app.schemas import (
     ErrorResponse,
     RefusalReason,
 )
+from app.scope import split_marker
 from app.services.base import LLMGateway, Passage, Retriever
 from app.tax_year import extract_tax_year
 
@@ -108,7 +109,12 @@ async def ask(
 
     llm_ms = int((time.perf_counter() - generation_started) * 1000)
 
-    cited, unsupported = split_citations(result.text, passages)
+    # Rule 3's signal, taken off the front of the answer before anything
+    # else reads it. The model marks the question; this service decides what
+    # that means.
+    out_of_scope, answer_text = split_marker(result.text)
+
+    cited, unsupported = split_citations(answer_text, passages)
 
     if unsupported:
         # The model cited a provision it was never given. Harmless to the
@@ -131,10 +137,13 @@ async def ask(
             result.reasoning_tokens,
         )
 
-    # Provisions were supplied, so a refusal here means the model was given
-    # law and cited none of it - a different defect from finding nothing, and
-    # worth telling apart in a score.
-    refusal_reason: RefusalReason = "none" if cited else "not_grounded"
+    # Ordered by what the caller most needs to know. Out of scope outranks
+    # ungrounded: a question that should not be answered was not answered
+    # badly, and the two call for different fixes - a prompt change versus a
+    # retrieval change.
+    refusal_reason: RefusalReason = (
+        "out_of_scope" if out_of_scope else "none" if cited else "not_grounded"
+    )
     refused = refusal_reason != "none"
 
     logger.info(
@@ -155,10 +164,12 @@ async def ask(
     )
 
     return AskResponse(
-        answer=result.text,
+        answer=answer_text,
         refused=refused,
         refusal_reason=refusal_reason,
-        citations=[
+        citations=[]
+        if out_of_scope
+        else [
             Citation(
                 act=p.act,
                 section_number=p.section_number,

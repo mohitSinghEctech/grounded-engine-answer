@@ -190,7 +190,10 @@ questions:
     category: section-mapping
     question: "Where is the deduction for rent paid found in the 2025 Act, previously section 80GG?"
     tax_year: null
-    expected_acts: [ITA-2025]
+    # The question names 80GG, so citing it is right, not a wrong-Act error.
+    # act_correct requires every cited Act to be expected; the first baseline
+    # failed this question for quoting the section it was asked about.
+    expected_acts: [ITA-2025, ITA-1961]
     expected_sections: ["134"]
     should_refuse: false
     verify: true
@@ -208,7 +211,8 @@ questions:
     category: section-mapping
     question: "Interest for default in furnishing a return was section 234A in the 1961 Act. What is it in the 2025 Act?"
     tax_year: null
-    expected_acts: [ITA-2025]
+    # As SM-03: 234A is named in the question, so citing it is correct.
+    expected_acts: [ITA-2025, ITA-1961]
     expected_sections: ["423"]
     should_refuse: false
     verify: true
@@ -232,7 +236,7 @@ questions:
     category: procedural
     question: "Which ITR form should a salaried individual file?"
     tax_year: null
-    expected_acts: [ITD-GUIDANCE]
+    expected_acts: [DEPT-GUIDANCE]
     expected_sections: []
     answer_contains: ["ITR-1"]
     should_refuse: false
@@ -242,7 +246,7 @@ questions:
     category: procedural
     question: "Who cannot file ITR-1 Sahaj?"
     tax_year: null
-    expected_acts: [ITD-GUIDANCE]
+    expected_acts: [DEPT-GUIDANCE]
     expected_sections: []
     should_refuse: false
     verify: false
@@ -251,7 +255,7 @@ questions:
     category: procedural
     question: "Which ITR form applies to an individual with capital gains income?"
     tax_year: null
-    expected_acts: [ITD-GUIDANCE]
+    expected_acts: [DEPT-GUIDANCE]
     expected_sections: []
     answer_contains: ["ITR-2"]
     should_refuse: false
@@ -261,7 +265,7 @@ questions:
     category: procedural
     question: "What are the income tax slab rates under the new tax regime for a salaried individual?"
     tax_year: null
-    expected_acts: [ITD-GUIDANCE]
+    expected_acts: [DEPT-GUIDANCE]
     expected_sections: []
     answer_contains: ["%"]
     should_refuse: false
@@ -271,7 +275,7 @@ questions:
     category: procedural
     question: "Is the new tax regime the default regime, and can a taxpayer opt out?"
     tax_year: null
-    expected_acts: [ITD-GUIDANCE]
+    expected_acts: [DEPT-GUIDANCE]
     expected_sections: []
     answer_contains: ["115BAC"]
     should_refuse: false
@@ -281,7 +285,7 @@ questions:
     category: procedural
     question: "Which return form applies to a company?"
     tax_year: null
-    expected_acts: [ITD-GUIDANCE]
+    expected_acts: [DEPT-GUIDANCE]
     expected_sections: []
     should_refuse: false
     verify: true
@@ -337,7 +341,9 @@ questions:
     category: synthesis
     question: "Which ITR form applies to a salaried individual, and what deduction can they claim for life insurance premium?"
     tax_year: null
-    expected_acts: [ITD-GUIDANCE, ITA-1961]
+    # tax_year is null, so the filter excludes neither Act and citing the
+    # 2025 life-insurance provision alongside 80C is not an error.
+    expected_acts: [DEPT-GUIDANCE, ITA-1961, ITA-2025]
     expected_sections: ["80C"]
     should_refuse: false
     verify: true

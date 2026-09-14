@@ -38,7 +38,8 @@ ECR_URI     := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(ECR_REPO)
         index-naive index-embedded search corpus-stats build up down restart logs \
         ps shell-agent shell-gateway clean qdrant-up qdrant-ui collections \
         aws-audit aws-spend ecr-login ecr-push ecs-start ecs-stop ecs-status \
-        manifest manifest-check health ask api-search index-guidance reindex corpus-export
+        manifest manifest-check health ask api-search index-guidance reindex corpus-export \
+        eval eval-smoke eval-baseline grade grade-summary
 
 help: ## Show this help
 	@echo "Grounded Answer Engine"
@@ -210,6 +211,13 @@ eval-smoke: ## One question per run, to check the harness is wired up
 
 eval-baseline: ## The run everything later is compared against
 	$(PY) eval/run.py --delay 3 --out eval/runs/baseline.csv
+
+grade: ## Grade answer_correct by hand. make grade [CSV=...] [CATEGORY=...]
+	@$(PY) eval/grade.py --csv $(or $(CSV),eval/runs/baseline.csv) \
+		$(if $(CATEGORY),--category $(CATEGORY),) $(if $(ID),--id $(ID),)
+
+grade-summary: ## Grading progress and rates, changing nothing
+	@$(PY) eval/grade.py --csv $(or $(CSV),eval/runs/baseline.csv) --summary
 
 api-search: ## Hit the /search endpoint. make api-search Q="..." [YEAR=2027]
 	@$(PY) -c "import json,os,urllib.request as u; \
