@@ -19,6 +19,10 @@ Question = Annotated[
 #   not_grounded         provisions were supplied and the answer cited none
 #   out_of_scope         answerable from the corpus, but asks for advice or
 #                        a computed liability, which rule 3 forbids
+#   not_in_corpus        the model was given provisions, read them, and said
+#                        they do not cover the question - a declared refusal,
+#                        as opposed to not_grounded which is only inferred
+#                        from an absence of citations
 #   needs_clarification  a bare section number that means different law in
 #                        each Act, so the year has to be settled first
 #
@@ -29,6 +33,7 @@ RefusalReason = Literal[
     "nothing_retrieved",
     "not_grounded",
     "out_of_scope",
+    "not_in_corpus",
     "needs_clarification",
 ]
 
@@ -79,6 +84,13 @@ class AskResponse(BaseModel):
     refusal_reason: RefusalReason
 
     citations: list[Citation]
+
+    # Citations the model produced for provisions it was never given. The
+    # most dangerous failure this system has, because a fabricated section
+    # reference looks exactly like a correct one. Returned, not merely
+    # logged, so a caller and an eval can both count them.
+    unsupported_citations: list[str] = []
+
     corpus_date: str
 
     tax_year: int | None

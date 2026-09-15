@@ -21,10 +21,11 @@ questions:
     tax_year: 2027
     expected_acts: [ITA-2025]
     expected_sections: ["123"]
-    # Indian notation, as the Act prints it. Rule 5 requires figures quoted
-    # exactly, so "150000" would fail a correct answer: the first run
-    # answered "₹1,50,000" and scored contains_expected false.
-    answer_contains: ["1,50,000"]
+    # As the Act prints it. Corpus s.123 reads "does not exceed ₹150000",
+    # with no thousands separators, and rule 5 requires figures quoted
+    # exactly - so this is the faithful form. Digits are compared with
+    # separators stripped, so a model that writes ₹1,50,000 also passes.
+    answer_contains: ["150000"]
     should_refuse: false
     verify: false
 
@@ -277,7 +278,10 @@ questions:
     tax_year: null
     expected_acts: [DEPT-GUIDANCE]
     expected_sections: []
-    answer_contains: ["115BAC"]
+    # Was ["115BAC"], which actively rewarded bad behaviour: that section
+    # is NOT in the corpus, so the only way to satisfy it was to cite a
+    # provision the model was never given. PR-04 did exactly that and PR-05,
+    # which stayed grounded, was marked down for it.
     should_refuse: false
     verify: false
 

@@ -6,21 +6,34 @@ fire when the model wraps the line in bold or a bullet, which it does
 unbidden.
 """
 
-from app.scope import MARKER, REFUSAL, split_marker
+from app.scope import NOT_IN_CORPUS, OUT_OF_SCOPE, REFUSALS, split_marker
 
 
 def test_plain_marker_is_detected_and_stripped():
-    flagged, remainder = split_marker(f"{MARKER}\nThe provisions cover rates.")
+    flagged, remainder = split_marker(f"{OUT_OF_SCOPE}\nThe provisions cover rates.")
 
-    assert flagged
+    assert flagged == "out_of_scope"
     assert remainder == "The provisions cover rates."
 
 
 def test_marker_alone_falls_back_to_the_canonical_refusal():
-    flagged, remainder = split_marker(MARKER)
+    flagged, remainder = split_marker(OUT_OF_SCOPE)
 
-    assert flagged
-    assert remainder == REFUSAL
+    assert flagged == "out_of_scope"
+    assert remainder == REFUSALS["out_of_scope"]
+
+
+def test_not_in_corpus_is_a_distinct_signal():
+    flagged, remainder = split_marker(f"{NOT_IN_CORPUS}\nOnly rates are covered.")
+
+    assert flagged == "not_in_corpus"
+    assert remainder == "Only rates are covered."
+
+
+def test_not_in_corpus_tolerates_wrapping_too():
+    flagged, _ = split_marker("**REFUSE: NOT-IN-CORPUS**\nnothing here")
+
+    assert flagged == "not_in_corpus"
 
 
 def test_markdown_wrapping_still_matches():
@@ -35,7 +48,7 @@ def test_markdown_wrapping_still_matches():
     ):
         flagged, remainder = split_marker(wrapped)
 
-        assert flagged, wrapped
+        assert flagged == "out_of_scope", wrapped
         assert remainder == "Only rates are covered."
 
 
@@ -48,7 +61,7 @@ def test_an_answer_that_merely_mentions_scope_does_not_match():
 
     flagged, remainder = split_marker(answer)
 
-    assert not flagged
+    assert flagged is None
     assert remainder == answer
 
 
@@ -57,5 +70,5 @@ def test_an_ordinary_answer_is_returned_untouched():
 
     flagged, remainder = split_marker(answer)
 
-    assert not flagged
+    assert flagged is None
     assert remainder == answer

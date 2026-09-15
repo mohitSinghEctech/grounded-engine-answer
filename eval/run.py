@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import statistics
 import sys
 import time
@@ -57,6 +58,8 @@ class Result:
     refusal_reason: str = ""
     cited: list[str] = field(default_factory=list)
     cited_acts: list[str] = field(default_factory=list)
+    # Provisions the model cited but was never given.
+    unsupported: list[str] = field(default_factory=list)
     retrieved: int = 0
 
     latency_ms: int = 0
@@ -76,6 +79,9 @@ class Result:
     refused_correctly: bool | None = None
     grounded: bool | None = None
     contains_expected: bool | None = None
+    # False when the answer invented a provision reference. Scored, not
+    # just logged: a fabricated citation reads exactly like a real one.
+    no_fabrication: bool | None = None
 
 
 def ask(url: str, question: str, tax_year: int | None, timeout: float) -> dict:
@@ -162,6 +168,7 @@ def score(question: dict, payload: dict) -> Result:
         refusal_reason=payload.get("refusal_reason") or "",
         cited=[c.get("section_number") for c in citations if c.get("section_number")],
         cited_acts=sorted({c.get("act") for c in citations if c.get("act")}),
+        unsupported=payload.get("unsupported_citations") or [],
         retrieved=payload.get("retrieved", 0),
         latency_ms=payload.get("latency_ms", 0),
         retrieval_ms=payload.get("retrieval_ms", 0),
@@ -169,6 +176,10 @@ def score(question: dict, payload: dict) -> Result:
         total_tokens=payload.get("total_tokens"),
         finish_reason=payload.get("finish_reason"),
     )
+
+    # Applies to every question, refusals included: inventing a source
+    # while declining is still inventing a source.
+    result.no_fabrication = not result.unsupported
 
     should_refuse = bool(question.get("should_refuse"))
     result.refused_correctly = result.refused == should_refuse
@@ -194,10 +205,21 @@ def score(question: dict, payload: dict) -> Result:
     phrases = question.get("answer_contains") or []
 
     if phrases:
-        lowered = result.answer.lower()
-        result.contains_expected = all(p.lower() in lowered for p in phrases)
+        # Compared with thousands separators stripped. The Acts print the
+        # same figure two ways - "₹150000" in the 2025 Act, "1,25,000" in the
+        # guidance - and models reformat freely, so a literal match measures
+        # formatting luck rather than whether the right value was stated.
+        lowered = _normalise_digits(result.answer.lower())
+        result.contains_expected = all(
+            _normalise_digits(p.lower()) in lowered for p in phrases
+        )
 
     return result
+
+
+def _normalise_digits(text: str) -> str:
+    """Drop separators that sit between two digits, and nothing else."""
+    return re.sub(r"(?<=\d)[,\s](?=\d)", "", text)
 
 
 def rate(results: list[Result], attribute: str) -> tuple[int, int]:
@@ -221,6 +243,7 @@ def summarise(results: list[Result]) -> None:
         ("refused correctly", "refused_correctly"),
         ("grounded        ", "grounded"),
         ("answer contains ", "contains_expected"),
+        ("no fabrication  ", "no_fabrication"),
     ):
         passed, total = rate(ok, attribute)
 
@@ -301,6 +324,14 @@ def summarise(results: list[Result]) -> None:
     if truncated:
         print(f"\n  ⚠ truncated answers: {', '.join(truncated)}")
 
+    fabricated = [r for r in ok if r.unsupported]
+
+    if fabricated:
+        print(f"\n  ⚠ invented provisions ({len(fabricated)}):")
+
+        for r in fabricated:
+            print(f"    {r.id:<7} {', '.join(r.unsupported)}")
+
     failures = [
         r for r in ok if r.retrieval_hit is False or r.refused_correctly is False
     ]
@@ -333,11 +364,13 @@ def write_csv(results: list[Result], path: Path) -> None:
                 "retrieved",
                 "cited",
                 "cited_acts",
+                "unsupported",
                 "retrieval_hit",
                 "act_correct",
                 "refused_correctly",
                 "grounded",
                 "contains_expected",
+                "no_fabrication",
                 "latency_ms",
                 "retrieval_ms",
                 "llm_ms",
@@ -361,11 +394,13 @@ def write_csv(results: list[Result], path: Path) -> None:
                     r.retrieved,
                     " ".join(r.cited),
                     " ".join(r.cited_acts),
+                    " ".join(r.unsupported),
                     r.retrieval_hit,
                     r.act_correct,
                     r.refused_correctly,
                     r.grounded,
                     r.contains_expected,
+                    r.no_fabrication,
                     r.latency_ms,
                     r.retrieval_ms,
                     r.llm_ms,

@@ -109,10 +109,10 @@ async def ask(
 
     llm_ms = int((time.perf_counter() - generation_started) * 1000)
 
-    # Rule 3's signal, taken off the front of the answer before anything
-    # else reads it. The model marks the question; this service decides what
-    # that means.
-    out_of_scope, answer_text = split_marker(result.text)
+    # The model's own signal, taken off the front of the answer before
+    # anything else reads it. The model marks the case; this service decides
+    # what that means.
+    declared, answer_text = split_marker(result.text)
 
     cited, unsupported = split_citations(answer_text, passages)
 
@@ -141,9 +141,24 @@ async def ask(
     # ungrounded: a question that should not be answered was not answered
     # badly, and the two call for different fixes - a prompt change versus a
     # retrieval change.
-    refusal_reason: RefusalReason = (
-        "out_of_scope" if out_of_scope else "none" if cited else "not_grounded"
-    )
+    # Out of scope outranks ungrounded: a question that should not have been
+    # answered was not answered badly, and the two call for different fixes -
+    # a prompt change versus a retrieval change.
+    #
+    # A NOT_IN_CORPUS marker was tried here too, so the model could declare
+    # "I read these and they do not cover it" rather than have it inferred
+    # from an absent citation. It scored worse: the model emitted it on
+    # questions it could have answered in part, refusing wholesale where
+    # rule 4 wanted a partial answer. Left in RefusalReason and in
+    # scope.py for a later attempt, but not asked for.
+    refusal_reason: RefusalReason
+    if declared == "out_of_scope":
+        refusal_reason = "out_of_scope"
+    elif cited:
+        refusal_reason = "none"
+    else:
+        refusal_reason = "not_grounded"
+
     refused = refusal_reason != "none"
 
     logger.info(
@@ -168,7 +183,7 @@ async def ask(
         refused=refused,
         refusal_reason=refusal_reason,
         citations=[]
-        if out_of_scope
+        if refusal_reason == "out_of_scope"
         else [
             Citation(
                 act=p.act,
@@ -179,6 +194,9 @@ async def ask(
             )
             for p in cited
         ],
+        unsupported_citations=sorted(
+            f"{act} s.{number}" for act, number in unsupported
+        ),
         corpus_date=_corpus_date(passages, settings),
         tax_year=tax_year,
         tax_year_source=tax_year_source,
