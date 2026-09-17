@@ -52,9 +52,9 @@ class OpenAICompatibleClient:
         # A prompt is just a one-message conversation. Everything below
         # works on the conversation, so the tool loop and the plain
         # single-shot path share one code path.
-        conversation = list(messages) if messages else [
-            {"role": "user", "content": prompt}
-        ]
+        conversation = (
+            list(messages) if messages else [{"role": "user", "content": prompt}]
+        )
 
         # Only send `tools` when there are some: some providers reject an
         # empty list, and an absent key is unambiguous.

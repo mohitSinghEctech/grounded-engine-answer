@@ -52,6 +52,10 @@ from typing import Any
 #:   capping       limiting how much of the window one section may take
 #:   retrieved     the final set: acts, sections and scores
 #:   prompting     assembling the provisions and the rules
+#:   planning      the model is deciding what to do next (agent turn N)
+#:   tool_call     the model asked for a function, with its arguments
+#:   tool_result   that function returned, with how much it found
+#:   gave_up       the model declared it cannot answer, with its reason
 #:   widening      searching again with the tax-year filter dropped
 #:   retrying      asking again, naming the citations that were invented
 #:   generating    the provisions are with the model
@@ -78,6 +82,12 @@ STEPS = (
     # pipeline cannot do.
     "widening",
     "retrying",
+    # Agent-only. Emitted once per loop turn: what the model asked for,
+    # and what came back.
+    "planning",
+    "tool_call",
+    "tool_result",
+    "gave_up",
     "prompting",
     "generating",
     "generated",

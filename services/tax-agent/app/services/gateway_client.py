@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Sequence
+from typing import Any
 
 import httpx
 
@@ -9,7 +11,7 @@ from app.errors import (
     GatewayUnavailable,
     InvalidGatewayResponse,
 )
-from app.services.base import Generation
+from app.services.base import Generation, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +21,27 @@ class HttpLLMGateway:
         self.client = client
         self.settings = settings
 
-    async def generate(self, prompt: str, max_tokens: int) -> Generation:
+    async def generate(
+        self,
+        prompt: str | None = None,
+        max_tokens: int = 2000,
+        *,
+        messages: Sequence[dict[str, Any]] | None = None,
+        tools: Sequence[dict[str, Any]] = (),
+    ) -> Generation:
+        # The gateway rejects both-or-neither, so send exactly one.
+        body: dict[str, Any] = {"max_tokens": max_tokens}
+
+        if messages is not None:
+            body["messages"] = list(messages)
+        else:
+            body["prompt"] = prompt
+
+        if tools:
+            body["tools"] = list(tools)
+
         try:
-            response = await self.client.post(
-                "/generate",
-                json={"prompt": prompt, "max_tokens": max_tokens},
-            )
+            response = await self.client.post("/generate", json=body)
 
         except httpx.TimeoutException as exc:
             logger.error("Gateway request failed | error=GATEWAY_TIMEOUT")
@@ -54,6 +71,16 @@ class HttpLLMGateway:
                 reasoning_tokens=payload.get("reasoning_tokens", 0),
                 total_tokens=payload["total_tokens"],
                 finish_reason=payload["finish_reason"],
+                tool_calls=tuple(
+                    ToolCall(
+                        id=call["id"],
+                        name=call["name"],
+                        arguments=call["arguments"],
+                    )
+                    # .get, not [] - an older gateway has no such key, and
+                    # "no tools requested" is the correct reading of that.
+                    for call in payload.get("tool_calls", [])
+                ),
             )
         except KeyError as exc:
             raise InvalidGatewayResponse(

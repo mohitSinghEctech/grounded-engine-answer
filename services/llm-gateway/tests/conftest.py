@@ -12,18 +12,26 @@ from app.vendors import resolve
 
 
 class FakeLLMClient:
-    def __init__(self, result=None, error=None, errors=None):
+    def __init__(self, result=None, error=None, errors=None, results=None):
         self.result = result
+        self.results = list(results or [])
         self.error = error
         self.errors = errors or []
         self.call_count = 0
+        #: What the router actually sent, so a test can assert the
+        #: conversation and the tool menu reached the client intact.
+        self.seen = []
 
     async def generate(
         self,
-        prompt: str,
-        max_tokens: int,
+        prompt: str | None = None,
+        max_tokens: int = 2000,
+        *,
+        messages=None,
+        tools=(),
     ) -> LLMResult:
         self.call_count += 1
+        self.seen.append({"prompt": prompt, "messages": messages, "tools": list(tools)})
 
         if self.errors:
             error = self.errors.pop(0)
@@ -33,6 +41,10 @@ class FakeLLMClient:
 
         if self.error is not None:
             raise self.error
+
+        # `results` drives a multi-step tool loop: one per model call.
+        if self.results:
+            return self.results.pop(0)
 
         return self.result
 
