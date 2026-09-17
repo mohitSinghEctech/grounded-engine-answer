@@ -42,7 +42,7 @@ AGENT_ECR_URI  := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(AGENT_ECR
         aws-audit aws-spend ecr-login ecr-push ecr-push-agent ecr-images ecs-start ecs-stop ecs-status \
         manifest manifest-check health ask ask-stream api-search index-guidance reindex corpus-export \
         eval eval-smoke eval-baseline grade grade-summary \
-        graph-on graph-off graph-which graph-draw
+        graph-on graph-off graph-which graph-draw graph-mermaid
 
 help: ## Show this help
 	@echo "Grounded Answer Engine"
@@ -203,6 +203,11 @@ graph-off: ## Switch /ask back to the linear pipeline
 
 graph-which: ## Which orchestrator the running agent is using
 	@docker compose exec tax-agent printenv PIPELINE || echo "linear (unset)"
+
+graph-mermaid: ## Regenerate docs/graph.mmd from the compiled graph
+	@cd $(AGENT) && $(PY) -c "from app.graph.build import build_ask_graph; \
+		print(build_ask_graph().get_graph().draw_mermaid())" > $(CURDIR)/docs/graph.mmd
+	@echo "wrote docs/graph.mmd - generated from the graph, so it cannot go stale"
 
 graph-draw: ## Print the graph's nodes and edges. Needs no running service
 	@cd $(AGENT) && $(PY) -c "from app.graph.build import build_ask_graph; \
