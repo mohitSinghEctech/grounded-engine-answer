@@ -48,6 +48,10 @@ services:
       # time, each with its own eval run, or neither change is attributable.
       GRAPH_WIDEN_ON_THIN_RETRIEVAL: ${GRAPH_WIDEN_ON_THIN_RETRIEVAL:-false}
       GRAPH_RETRY_ON_FABRICATION: ${GRAPH_RETRY_ON_FABRICATION:-false}
+      # Comparison questions go to the tool-calling agent instead of the
+      # straight pipeline. Costs ~3x the tokens on the questions it fires
+      # for, so it is off until its own eval run says it earns that.
+      GRAPH_AGENT_ON_COMPARISON: ${GRAPH_AGENT_ON_COMPARISON:-false}
       # "*" so web/index.html works opened straight from disk - a file://
       # page sends `Origin: null`, which no named origin matches. Local
       # development only; a deployed service should name its real origin.

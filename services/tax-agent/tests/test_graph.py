@@ -84,19 +84,32 @@ class ScriptedRetriever:
 
 
 class ScriptedGateway:
-    """Answers with the next scripted text, and keeps every prompt it saw."""
+    """Answers with the next scripted reply, and keeps what it was sent.
 
-    def __init__(self, *texts: str):
-        self.texts = list(texts)
-        self.prompts: list[str] = []
+    A reply is either a string (wrapped as plain prose) or a whole
+    `Generation`, which is how a test scripts a tool call.
+    """
 
-    async def generate(self, prompt: str, max_tokens: int) -> Generation:
+    def __init__(self, *replies):
+        self.replies = list(replies)
+        self.prompts: list[str | None] = []
+        self.conversations: list[list[dict]] = []
+
+    async def generate(
+        self, prompt=None, max_tokens=2000, *, messages=None, tools=()
+    ) -> Generation:
         self.prompts.append(prompt)
 
-        text = self.texts.pop(0) if len(self.texts) > 1 else self.texts[0]
+        if messages is not None:
+            self.conversations.append(list(messages))
+
+        reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+
+        if isinstance(reply, Generation):
+            return reply
 
         return Generation(
-            text=text,
+            text=reply,
             model="stub-model",
             prompt_tokens=100,
             completion_tokens=20,
@@ -439,3 +452,161 @@ def test_fabricated_only_distinguishes_the_retryable_case():
     assert not both.fabricated_only
     assert invented_only.fabricated_only
     assert not nothing.fabricated_only
+
+
+# --------------------------------------------------------------------------
+# entry branch: pipeline or agent
+# --------------------------------------------------------------------------
+
+
+def tool_reply(name, arguments, call_id="c1"):
+    """A model reply that asks for a tool instead of answering."""
+    import json as _json
+
+    from app.services.base import ToolCall
+
+    return Generation(
+        text="",
+        model="stub-model",
+        prompt_tokens=100,
+        completion_tokens=10,
+        reasoning_tokens=0,
+        total_tokens=110,
+        finish_reason="tool_calls",
+        tool_calls=(ToolCall(id=call_id, name=name, arguments=_json.dumps(arguments)),),
+    )
+
+
+@sync
+async def test_the_agent_is_off_by_default():
+    """A behaviour change has to earn its place in its own eval run."""
+    gateway = ScriptedGateway("Premium (ITA-1961 s.80D).")
+
+    response = await run_graph_pipeline(
+        AskRequest(question="What changed for salary income between the Acts?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(),
+    )
+
+    # One plain prompt call, and no conversation: the pipeline path.
+    assert len(gateway.prompts) == 1
+    assert gateway.conversations == []
+    assert response.tools_called == []
+    assert response.agent_steps is None
+
+
+@sync
+async def test_a_comparison_question_takes_the_agent_path():
+    gateway = ScriptedGateway(
+        tool_reply("search_provisions", {"query": "salary income"}),
+        "Salary is charged under (ITA-1961 s.80D).",
+    )
+    recorder = Recorder()
+
+    response = await run_graph_pipeline(
+        AskRequest(question="What changed for salary income between the Acts?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(graph_agent_on_comparison=True),
+        progress=recorder,
+    )
+
+    assert response.tools_called == ["search_provisions"]
+    assert response.agent_steps == 2
+    assert "planning" in recorder.names()
+    # It rejoined the shared path: the citation was verified, not trusted.
+    assert [c.section_number for c in response.citations] == ["80D"]
+
+
+@sync
+async def test_a_simple_question_still_takes_the_cheap_path():
+    """Agency on a one-hop question costs ~3x the tokens for no benefit."""
+    gateway = ScriptedGateway("Premium (ITA-1961 s.80D).")
+
+    response = await run_graph_pipeline(
+        AskRequest(question="What is the deduction limit under section 80D?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(graph_agent_on_comparison=True),
+    )
+
+    assert response.tools_called == []
+    assert response.refusal_reason == "none"
+
+
+@sync
+async def test_cannot_answer_becomes_a_declared_not_in_corpus_refusal():
+    """The honest version of the marker that failed as a prompt rule.
+
+    Inferred from an absent citation it was a guess; declared through a
+    tool call it is a fact, and it carries the model's own reason.
+    """
+    gateway = ScriptedGateway(
+        tool_reply("cannot_answer", {"reason": "No provision covers this."}),
+    )
+
+    response = await run_graph_pipeline(
+        AskRequest(question="How did crypto rules change between the Acts?"),
+        ScriptedRetriever([]),
+        gateway,
+        make_settings(graph_agent_on_comparison=True),
+    )
+
+    assert response.refused
+    assert response.refusal_reason == "not_in_corpus"
+    assert "No provision covers this." in response.answer
+    assert response.citations == []
+
+
+@sync
+async def test_an_exhausted_budget_is_its_own_refusal_reason():
+    """Not the model's verdict on the corpus - our backstop firing."""
+    gateway = ScriptedGateway(tool_reply("search_provisions", {"query": "x"}))
+
+    response = await run_graph_pipeline(
+        AskRequest(question="What is the difference between the Acts?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(graph_agent_on_comparison=True, agent_max_steps=2),
+    )
+
+    assert response.refusal_reason == "budget_exhausted"
+    assert response.agent_steps == 2
+
+
+@sync
+async def test_an_uncited_agent_answer_is_still_caught():
+    """Agency is not a side door around citation verification."""
+    gateway = ScriptedGateway(
+        tool_reply("search_provisions", {"query": "salary"}),
+        "Salary is taxed, broadly speaking.",  # no citation at all
+    )
+
+    response = await run_graph_pipeline(
+        AskRequest(question="What changed for salary between the Acts?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(graph_agent_on_comparison=True),
+    )
+
+    assert response.refusal_reason == "not_grounded"
+
+
+def test_the_router_only_fires_on_dependent_questions():
+    from app.pipeline.steps import wants_agent
+
+    for question in (
+        "What changed for house property income in the 2025 Act?",
+        "Compare section 24 across both Acts",
+        "What is the difference between 80C and 80D?",
+        "ITA-1961 vs ITA-2025 on salary",
+    ):
+        assert wants_agent(question), question
+
+    for question in (
+        "What is the deduction limit under section 80D?",
+        "Is interest under section 234A charged monthly?",
+        "Which ITR form does a salaried individual file?",
+    ):
+        assert not wants_agent(question), question

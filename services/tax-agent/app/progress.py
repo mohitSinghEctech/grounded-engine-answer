@@ -113,7 +113,13 @@ class Step:
         Simpler than a WebSocket because it only goes one way, which is all
         this needs.
         """
-        payload = json.dumps({"step": self.name, **self.detail})
+        # "step" stays first because a human reads these streams, and a
+        # detail key of the same name is dropped rather than allowed to
+        # overwrite the step name. That collision happened once: the
+        # agent's planning step sent step=1 and every reader displayed a
+        # number where the phrase belonged.
+        detail = {key: value for key, value in self.detail.items() if key != "step"}
+        payload = json.dumps({"step": self.name, **detail})
 
         return f"event: {event}\ndata: {payload}\n\n"
 

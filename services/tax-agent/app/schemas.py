@@ -35,6 +35,9 @@ RefusalReason = Literal[
     "out_of_scope",
     "not_in_corpus",
     "needs_clarification",
+    #: The agent used its step or token budget without reaching an answer.
+    #: Rare by design - read it as a defect, not a normal outcome.
+    "budget_exhausted",
 ]
 
 
@@ -113,6 +116,19 @@ class AskResponse(BaseModel):
     reasoning_tokens: int | None = None
     total_tokens: int | None = None
     finish_reason: str | None = None
+
+    # ── the agent path only; empty on the straight pipeline ───────────
+    #
+    # The trajectory. Two runs can reach the same answer at four times the
+    # cost, and only the path shows that - so it is returned rather than
+    # just logged, which lets the eval harness score it.
+    tools_called: list[str] = []
+
+    #: Model calls the agent made. 1 would mean it answered without tools.
+    agent_steps: int | None = None
+
+    #: Identical calls the model repeated. Non-zero means it was looping.
+    redundant_calls: int | None = None
 
 
 class ErrorResponse(BaseModel):

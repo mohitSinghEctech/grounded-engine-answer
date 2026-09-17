@@ -18,6 +18,7 @@ import logging
 import time
 from dataclasses import dataclass
 
+from app.agent.loop import AgentRun, run_agent
 from app.config import Settings
 from app.progress import Progress
 from app.prompt import REFUSAL, build_prompt, split_citations
@@ -178,6 +179,145 @@ async def retrieve_widened(context: Context, year: YearResolution) -> Retrieval:
     )
 
     return Retrieval(passages=passages, retrieval_ms=context.elapsed_ms(), widened=True)
+
+
+#: Questions where step two depends on what step one returned. The
+#: pipeline cannot form the second query because it does not exist until
+#: the first result is in - which is the only honest reason to add agency.
+COMPARATIVE = (
+    "changed",
+    "change",
+    "difference",
+    "differences",
+    "compare",
+    "comparison",
+    "versus",
+    " vs ",
+    "instead of",
+    "replaced",
+)
+
+
+def wants_agent(question: str) -> bool:
+    """Keyword routing, deliberately.
+
+    It is free, deterministic and testable, and it gives a baseline for a
+    model-based classifier to beat later. Starting with the cheap option
+    and measuring it is the point, not a shortcut.
+    """
+    lowered = f" {question.lower()} "
+
+    return any(word in lowered for word in COMPARATIVE)
+
+
+async def run_tool_agent(
+    context: Context, year: YearResolution
+) -> tuple[AgentRun, Retrieval, Generation, int]:
+    """Hand the question to the model and let it call the tools.
+
+    Returns the same three things every other path produces - provisions,
+    a Generation, an llm_ms - so `verify` and `finalise` do not know or
+    care that an agent produced them. That is what keeps the citation
+    check on the agent path: it is the same check.
+    """
+    started = time.perf_counter()
+
+    run = await run_agent(
+        question=context.request.question,
+        retriever=context.retriever,
+        gateway=context.gateway,
+        progress=context.report,
+        top_k=context.settings.retrieval_top_k,
+        max_tokens=context.request.max_tokens,
+        max_steps=context.settings.agent_max_steps,
+        token_budget=context.settings.agent_token_budget,
+    )
+
+    llm_ms = int((time.perf_counter() - started) * 1000)
+
+    # The agent both retrieves and generates, so "retrieval_ms" is the
+    # whole loop. Reported honestly rather than split into a fiction.
+    retrieval = Retrieval(passages=run.passages, retrieval_ms=llm_ms)
+
+    result = Generation(
+        text=run.text,
+        model=run.model or "unknown",
+        prompt_tokens=run.prompt_tokens,
+        completion_tokens=run.completion_tokens,
+        reasoning_tokens=0,
+        total_tokens=run.total_tokens,
+        finish_reason=run.finish_reason,
+    )
+
+    logger.info(
+        "Agent path finished | outcome=%s | steps=%s | tools=%s | "
+        "redundant=%s | provisions=%s | total_tokens=%s | took_ms=%s",
+        run.outcome,
+        run.steps,
+        run.trail,
+        run.redundant_calls,
+        len(run.passages),
+        run.total_tokens,
+        llm_ms,
+    )
+
+    return run, retrieval, result, llm_ms
+
+
+async def refuse_agent_stopped(
+    context: Context,
+    year: YearResolution,
+    retrieval: Retrieval,
+    run: AgentRun,
+) -> AskResponse:
+    """The agent stopped without an answer. Two ways, and they differ.
+
+    `gave_up` is the model declaring the provisions do not cover the
+    question - which is what `not_in_corpus` was always meant to mean. It
+    failed as a prompt marker because it was inferred; declared through a
+    tool call, with a reason, it is a fact rather than a guess.
+
+    `budget_exhausted` is our backstop firing, and it is not the model's
+    verdict on anything. It should be rare enough to read as a defect.
+    """
+    reason: RefusalReason = (
+        "not_in_corpus" if run.outcome == "gave_up" else "budget_exhausted"
+    )
+
+    await context.report.emit("refused", reason=reason, model_called=True)
+
+    logger.info(
+        "Agent refused | reason=%s | steps=%s | tools=%s | detail=%s",
+        reason,
+        run.steps,
+        run.trail,
+        run.give_up_reason[:200],
+    )
+
+    answer = run.give_up_reason or (
+        "I could not reach an answer within the step budget for this question."
+    )
+
+    return AskResponse(
+        answer=answer,
+        refused=True,
+        refusal_reason=reason,
+        citations=[],
+        corpus_date=corpus_date(retrieval.passages, context.settings),
+        tax_year=year.tax_year,
+        tax_year_source=year.source,
+        retrieved=len(retrieval.passages),
+        latency_ms=context.elapsed_ms(),
+        retrieval_ms=retrieval.retrieval_ms,
+        model=run.model or None,
+        prompt_tokens=run.prompt_tokens,
+        completion_tokens=run.completion_tokens,
+        total_tokens=run.total_tokens,
+        finish_reason=run.finish_reason,
+        tools_called=run.trail,
+        agent_steps=run.steps,
+        redundant_calls=run.redundant_calls,
+    )
 
 
 async def make_prompt(context: Context, passages: list[Passage]) -> str:
@@ -369,6 +509,7 @@ async def finalise(
     result: Generation,
     verification: Verification,
     llm_ms: int,
+    agent: AgentRun | None = None,
 ) -> AskResponse:
     """Turn the verified answer into the response, and say what happened."""
     refusal_reason = decide_refusal(verification)
@@ -428,4 +569,7 @@ async def finalise(
         reasoning_tokens=result.reasoning_tokens,
         total_tokens=result.total_tokens,
         finish_reason=result.finish_reason,
+        tools_called=agent.trail if agent else [],
+        agent_steps=agent.steps if agent else None,
+        redundant_calls=agent.redundant_calls if agent else None,
     )

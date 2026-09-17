@@ -15,7 +15,13 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from app.pipeline.steps import Context, Retrieval, Verification, YearResolution
+from app.agent.loop import AgentRun
+from app.pipeline.steps import (
+    Context,
+    Retrieval,
+    Verification,
+    YearResolution,
+)
 from app.schemas import AskResponse
 from app.services.base import Generation
 
@@ -38,6 +44,11 @@ class AskState(TypedDict, total=False):
     #: to guarantee it can only fire once - a loop that can re-enter itself
     #: needs a bound that does not depend on the model behaving.
     attempts: int
+
+    #: Present only on the agent path. Carries the trajectory - which
+    #: tools, in what order - which is the part output-only evaluation
+    #: cannot see.
+    agent: AgentRun
 
     #: Set by exactly one terminal node. Whatever is here when the graph
     #: stops is what the caller gets.

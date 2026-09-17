@@ -2,7 +2,11 @@
 
 The shape, in words:
 
-    resolve -> retrieve -> ? nothing found -> refuse_empty -> END
+    resolve -> ? comparison question -> agent -> ? answered -> verify
+             |                                  ? stopped  -> refuse_stopped
+             ? otherwise
+             v
+               retrieve -> ? nothing found -> refuse_empty -> END
                         |                 -> widen -> ? found -> prompt
                         |                                 ? empty -> refuse_empty
                         ? found           -> prompt -> generate -> verify
@@ -47,6 +51,8 @@ def build_ask_graph():
     builder = StateGraph(AskState)
 
     builder.add_node("resolve", nodes.resolve)
+    builder.add_node("agent", nodes.agent)
+    builder.add_node("refuse_stopped", nodes.refuse_stopped)
     builder.add_node("retrieve", nodes.retrieve)
     builder.add_node("widen", nodes.widen)
     builder.add_node("prompt", nodes.prompt)
@@ -57,7 +63,21 @@ def build_ask_graph():
     builder.add_node("finalise", nodes.finalise)
 
     builder.add_edge(START, "resolve")
-    builder.add_edge("resolve", "retrieve")
+
+    # The entry branch. Everything downstream of `agent` is shared with
+    # the pipeline, so this is genuinely one fork and not a second
+    # pipeline bolted alongside the first.
+    builder.add_conditional_edges(
+        "resolve",
+        nodes.route_entry,
+        {"pipeline": "retrieve", "agent": "agent"},
+    )
+
+    builder.add_conditional_edges(
+        "agent",
+        nodes.route_after_agent,
+        {"verify": "verify", "refuse": "refuse_stopped"},
+    )
 
     builder.add_conditional_edges(
         "retrieve",
@@ -86,6 +106,7 @@ def build_ask_graph():
     builder.add_edge("retry_prompt", "generate")
 
     builder.add_edge("refuse_empty", END)
+    builder.add_edge("refuse_stopped", END)
     builder.add_edge("finalise", END)
 
     return builder.compile()

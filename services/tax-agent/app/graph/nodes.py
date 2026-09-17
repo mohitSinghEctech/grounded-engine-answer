@@ -52,6 +52,38 @@ async def widen(state: AskState) -> AskState:
     return {"retrieval": retrieval}
 
 
+async def agent(state: AskState) -> AskState:
+    """Let the model call the tools, then rejoin the normal path.
+
+    It fills the same three slots the pipeline fills - retrieval, result,
+    llm_ms - so `verify` and `finalise` treat an agent answer exactly like
+    a pipeline answer. Which means the citation check is not reimplemented
+    here, and cannot drift from the one the eval harness measured.
+    """
+    run, retrieval, result, llm_ms = await steps.run_tool_agent(
+        state["context"], state["year"]
+    )
+
+    return {
+        "agent": run,
+        "retrieval": retrieval,
+        "result": result,
+        "llm_ms": llm_ms,
+    }
+
+
+async def refuse_stopped(state: AskState) -> AskState:
+    """The agent stopped without an answer. Terminal."""
+    response = await steps.refuse_agent_stopped(
+        state["context"],
+        state["year"],
+        state["retrieval"],
+        state["agent"],
+    )
+
+    return {"response": response}
+
+
 async def prompt(state: AskState) -> AskState:
     """Assemble the provisions and the rules into one prompt."""
     text = await steps.make_prompt(state["context"], state["retrieval"].passages)
@@ -106,6 +138,7 @@ async def finalise(state: AskState) -> AskState:
         state["result"],
         state["verification"],
         state["llm_ms"],
+        state.get("agent"),
     )
 
     return {"response": response}
@@ -114,6 +147,32 @@ async def finalise(state: AskState) -> AskState:
 # --------------------------------------------------------------------------
 # routers
 # --------------------------------------------------------------------------
+
+
+def route_entry(state: AskState) -> str:
+    """Pipeline or agent - decided before anything is retrieved.
+
+    The test is the question's shape, not the model's opinion, and it is
+    kept narrow on purpose: a one-hop question answered by the agent costs
+    roughly three times the tokens for no benefit. Agency is justified
+    only where step two depends on step one's result.
+    """
+    context = state["context"]
+
+    if not context.settings.graph_agent_on_comparison:
+        return "pipeline"
+
+    return "agent" if steps.wants_agent(context.request.question) else "pipeline"
+
+
+def route_after_agent(state: AskState) -> str:
+    """Verify what it wrote, or record why it stopped.
+
+    An answer goes through the same verification as any other, including
+    the refusal precedence in `decide_refusal` - so an agent that writes
+    prose without citing anything is still caught as not_grounded.
+    """
+    return "verify" if state["agent"].outcome == "answered" else "refuse"
 
 
 def route_after_retrieval(state: AskState) -> str:

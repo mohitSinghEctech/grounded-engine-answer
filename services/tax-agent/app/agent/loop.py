@@ -103,7 +103,9 @@ async def run_agent(
     for step in range(max_steps):
         run.steps = step + 1
 
-        await progress.emit("planning", step=run.steps, of=max_steps)
+        # "turn", not "step": the SSE frame already uses "step" for the
+        # step name, and a detail key of the same name collides with it.
+        await progress.emit("planning", turn=run.steps, of=max_steps)
 
         reply: Generation = await gateway.generate(
             messages=conversation,

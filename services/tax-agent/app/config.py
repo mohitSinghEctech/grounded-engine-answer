@@ -91,6 +91,17 @@ class Settings(BaseSettings):
     # naming them. Costs a second model call on the answers that trip it.
     graph_retry_on_fabrication: bool = False
 
+    # Send comparison questions down the agent path, where the model calls
+    # tools itself. Off by default: it is a behaviour change and costs
+    # roughly 3x the tokens on the questions it fires for, so it has to
+    # earn that in its own eval run.
+    graph_agent_on_comparison: bool = False
+
+    # The agent's two bounds. Neither depends on the model behaving: it
+    # stops at whichever it reaches first.
+    agent_max_steps: int = 6
+    agent_token_budget: int = 40_000
+
     model_config = SettingsConfigDict(env_file=".env")
 
 

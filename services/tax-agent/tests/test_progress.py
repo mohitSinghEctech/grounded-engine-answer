@@ -201,3 +201,17 @@ def test_cors_allows_a_configured_origin(cors_client):
 
     assert response.headers.get("access-control-allow-origin") == "*"
     assert "POST" in response.headers.get("access-control-allow-methods", "")
+
+
+def test_a_detail_key_cannot_overwrite_the_step_name():
+    """It did once: the agent's `planning` step sent step=1, and the frame
+    arrived with a 1 where the step name belonged, so every reader showed
+    a number instead of a phrase."""
+    import json
+
+    from app.progress import Step
+
+    frame = Step("planning", {"step": 1, "of": 6}).to_sse()
+    payload = json.loads(frame.split("data: ")[1])
+
+    assert payload["step"] == "planning"
