@@ -593,20 +593,40 @@ async def test_an_uncited_agent_answer_is_still_caught():
     assert response.refusal_reason == "not_grounded"
 
 
-def test_the_router_only_fires_on_dependent_questions():
+def test_the_router_fires_on_the_real_eval_questions():
+    """Pinned against eval/questions.yaml, not against invented phrasings.
+
+    The first version of this router was written from imagination and
+    matched none of these four - they say "corresponds to", "replaces",
+    "previously" and "was section X", where the keyword list had
+    "replaced". Zero of forty questions took the path the branch existed
+    for, and every test passed, because the tests were invented from the
+    same imagination as the router.
+    """
     from app.pipeline.steps import wants_agent
 
+    # The four that name a section in one Act and ask for its counterpart.
     for question in (
+        "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?",
+        "Which provision of the 2025 Act replaces section 80D on health "
+        "insurance premium?",
+        "Where is the deduction for rent paid found in the 2025 Act, "
+        "previously section 80GG?",
+        "Interest for default in furnishing a return was section 234A in the 1961 Act. "
+        "What is it in the 2025 Act?",
+        # and the phrasings the first version did catch
         "What changed for house property income in the 2025 Act?",
-        "Compare section 24 across both Acts",
-        "What is the difference between 80C and 80D?",
-        "ITA-1961 vs ITA-2025 on salary",
+        "What is the difference between the two Acts on salary?",
     ):
         assert wants_agent(question), question
 
+    # One-hop questions must stay on the cheap path: agency costs ~3x.
     for question in (
         "What is the deduction limit under section 80D?",
         "Is interest under section 234A charged monthly?",
         "Which ITR form does a salaried individual file?",
+        "What is section 139 about?",
+        "Which section of the 2025 Act covers deduction for contributions to the "
+        "pension scheme of the Central Government?",
     ):
         assert not wants_agent(question), question

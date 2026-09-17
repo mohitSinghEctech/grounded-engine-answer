@@ -15,6 +15,7 @@ there is exactly one implementation of each stage to compare.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -181,12 +182,28 @@ async def retrieve_widened(context: Context, year: YearResolution) -> Retrieval:
     return Retrieval(passages=passages, retrieval_ms=context.elapsed_ms(), widened=True)
 
 
-#: Questions where step two depends on what step one returned. The
-#: pipeline cannot form the second query because it does not exist until
-#: the first result is in - which is the only honest reason to add agency.
-COMPARATIVE = (
+#: Wording that means "find this in one Act, then find its counterpart in
+#: the other" - the one question shape where step two cannot be formed
+#: until step one has returned, and so the only honest reason for agency.
+#:
+#: Read off eval/questions.yaml rather than invented. The first version of
+#: this list was written from memory and matched NONE of the four
+#: section-mapping questions it existed to catch: they say "corresponds
+#: to", "replaces", "previously" and "was section X", and the list had
+#: "replaced" but not "replaces". A router that misses the whole category
+#: it was built for is worse than no router, because it looks like it
+#: works.
+CROSS_ACT = (
+    "corresponds",
+    "corresponding",
+    "replaces",
+    "replaced",
+    "replacement",
+    "previously",
+    "equivalent",
+    "counterpart",
+    "renumbered",
     "changed",
-    "change",
     "difference",
     "differences",
     "compare",
@@ -194,20 +211,30 @@ COMPARATIVE = (
     "versus",
     " vs ",
     "instead of",
-    "replaced",
+)
+
+#: "... was section 234A in the 1961 Act. What is it in the 2025 Act?"
+#: The same two-hop shape, stated as a fact instead of with a keyword.
+_WAS_SECTION = re.compile(
+    r"was section\s+\S+\s+(?:in|of|under)\s+the\s+\d{4}", re.IGNORECASE
 )
 
 
 def wants_agent(question: str) -> bool:
     """Keyword routing, deliberately.
 
-    It is free, deterministic and testable, and it gives a baseline for a
-    model-based classifier to beat later. Starting with the cheap option
-    and measuring it is the point, not a shortcut.
+    Free, deterministic and testable, and it leaves a baseline for a
+    model-based classifier to beat later - starting with the cheap option
+    and measuring it is the point, not a shortcut. But cheap only works if
+    the keywords come from the questions rather than from imagination; see
+    CROSS_ACT for what that cost the first time.
     """
     lowered = f" {question.lower()} "
 
-    return any(word in lowered for word in COMPARATIVE)
+    if any(word in lowered for word in CROSS_ACT):
+        return True
+
+    return bool(_WAS_SECTION.search(question))
 
 
 async def run_tool_agent(
