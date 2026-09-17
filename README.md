@@ -1,20 +1,125 @@
 # Grounded Answer Engine
 
-A production-oriented FastAPI service for generating answers through an LLM, with a clean application boundary around the model provider.
+A question-answering service over Indian income tax law that will not answer
+without a source. It indexes **1,423 statutory sections as 3,286 embedded
+chunks** from two concurrently-in-force Acts, retrieves before it generates,
+and verifies every citation against the provisions actually supplied to the
+model.
 
-The project focuses on:
+Grounding here is structural rather than advisory:
 
-- Clean API architecture
-- Provider abstraction
-- Explicit error handling
-- Retry policies with exponential backoff and jitter
+- **Retrieve nothing and the model is never called.** It cannot be argued into
+  answering from memory, because on that path it is not invoked at all.
+- **Every citation is checked** against what was supplied. Anything else is
+  recorded as invented, returned to the caller, and scored — not quietly
+  dropped.
+- **Refusal has a reason**, so "could not" and "should not" are distinguishable
+  and lead to different fixes.
+- **It is measured**, against 40 questions with six objective signals and a
+  human pass, comparing groups of runs rather than single runs.
+
+Engineering practice, which the above depends on:
+
+- Two containerised services; the model provider sits behind one of them
+- Pluggable retrieval — embedder and vector store are each one registry entry
+- Two interchangeable orchestrators: a straight line, and a LangGraph graph
+  with a tool-calling agent on one branch
+- Explicit error vocabulary, a timeout ladder, retries with jitter
 - Request IDs and structured logging
-- Input and output validation
-- Automated tests without requiring an API key
-- Ruff linting and formatting
-- Continuous integration with GitHub Actions
+- 132 tests, none of which need an API key (92 in tax-agent, 40 in llm-gateway)
+- Ruff, and CI on GitHub Actions
 
-> **Current status:** System 1 — LLM API shell complete. Retrieval and grounding are planned for the next phase.
+> **Current status:** retrieval, grounding, evaluation and orchestration are
+> built and measured. Two services run in Docker and on AWS ECS Fargate; the
+> `/ask` pipeline also exists as a LangGraph graph with a tool-calling agent on
+> one branch. See Results below for what it scores and what still fails.
+
+---
+
+## Results
+
+The service is measured against a fixed set of **40 questions**
+(`eval/questions.yaml`) spanning seven categories: exact-fact, year-scoped,
+section-mapping, procedural, synthesis, out-of-corpus and prompt-resistance.
+
+Six signals are scored automatically. A seventh, `answer_correct`, is graded by
+hand, because an LLM judge would substitute its own error rate for the one being
+measured. Not-applicable cells are held as `None` rather than `False`, so a rate
+cannot be inflated by questions the signal does not apply to.
+
+| Signal | Baseline | Current | What it asks |
+|---|---|---|---|
+| `retrieval_hit` | 86% | **89–93%** | did the expected provision reach the model |
+| `act_correct` | 85% | **97%** | was the right Act cited for the year in question |
+| `refused_correctly` | 72% | **90–95%** | did it refuse exactly when it should |
+| `grounded` | 74% | **91–94%** | every claim traceable to a supplied provision |
+| `contains_expected` | 83% | **80–100%** | the expected figure or phrase appears |
+| `no_fabrication` | n/a | **95–98%** | no citation to a provision never supplied |
+| `answer_correct` | — | **34/40 (85%)** | hand-graded against the corpus |
+
+Baseline is a single run; current is a range across three. `no_fabrication` was
+added after the baseline, so there is no before-figure — the honest answer is
+that fabrication was not being counted at all until it was.
+
+`answer_correct` was hand-graded once, at the Tier 0 stage
+(`eval/runs/tier0.csv`), and **has not been re-graded since**. It is the least
+current number here.
+
+### Why ranges, not numbers
+
+A single 40-question run cannot settle a small difference. Seven runs of
+near-identical configurations produced a `retrieval_hit` range of **75% to 86%**,
+and the questions that moved between them — OC-05, YS-07, SY-06, SM-04 —
+flickered rather than responding to any change.
+
+So configurations are compared as **groups of three runs**, and `eval/compare.py`
+only reports a difference as REAL when the two ranges do not overlap:
+
+```bash
+python eval/compare.py --label before eval/runs/a-r*.csv \
+                       --label after  eval/runs/b-r*.csv
+```
+
+### What still fails
+
+Three questions fail in **every** run. These are the ones worth engineering
+against; everything else flickers.
+
+| ID | Question | Fails | Cause |
+|---|---|---|---|
+| **SM-01** | "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?" | `retrieval_hit`, `grounded`, `refused_correctly` | **corpus gap, not retrieval.** `maps_to_1961` is populated for 4 of 552 sections, so the cross-Act mapping the question asks for is not in the index. The model correctly refuses rather than guessing a number. |
+| **SM-02** | "Which provision of the 2025 Act replaces section 80D?" | same | same gap |
+| **PR-06** | "Which return form applies to a company?" | `act_correct`, `no_fabrication` | **a reproducible fabrication.** The departmental guidance pages are chunked as `company-ay1` and `company-ay2`; the model cites both, then extrapolates a third — `DEPT-GUIDANCE s.company-ay3` — which does not exist. Identical in all three runs, so this is the corpus's naming pattern inviting extrapolation, not sampling noise. |
+
+Three more fail intermittently and are treated as noise until they repeat:
+OC-05 (2 of 3 runs), PR-03 and YS-04 (1 of 3 each).
+
+### Known limitations
+
+- **No reranking and no hybrid search.** Retrieval is dense-vector only, with a
+  hand-rolled exact path for named sections. Embeddings miss exact tokens —
+  "section 234A" did not retrieve section 234A until that path existed.
+- **Prompt injection is untested.** Grounding is not injection resistance: the
+  citation check catches an answer that cites nothing supplied, not a plausible
+  wrong answer produced by an instruction inside a retrieved passage.
+- **One corpus, one language, two Acts.** Nothing here is evidence about scale.
+  What is known is where it breaks first: one section flooding the context
+  window, and exact lookup that similarity cannot do.
+- **`answer_correct` is stale**, as above.
+- **The cross-Act mapping is 4 of 552.** Populating it by matching section
+  titles across Acts would close SM-01 and SM-02.
+
+### Reproducing this
+
+```bash
+docker compose up -d                        # qdrant, gateway, agent
+make eval OUT=eval/runs/mine-r1.csv         # ~9 minutes, 40 questions
+make grade CSV=eval/runs/mine-r1.csv        # hand-grade answer_correct
+```
+
+Three runs per configuration, then `eval/compare.py`. One behaviour change per
+group, or nothing is attributable — a lesson paid for once already, when two
+prompt changes shipped together and only one of them was worth keeping.
 
 ---
 
@@ -51,9 +156,12 @@ The application separates provider-specific SDK behavior from the rest of the ap
 
 This allows the provider implementation to be replaced without changing the API layer and allows tests to use a fake LLM client instead of making real API calls.
 
-### Planned Grounded Architecture
+### The grounded request path
 
-The next phase will extend the request path to:
+Built, not planned. Two things in it are load-bearing: with nothing retrieved
+the model is **never called**, so it cannot be argued into answering from
+memory; and every citation is checked against the provisions actually supplied
+before the answer leaves the service.
 
 ```text
 Client
@@ -62,25 +170,69 @@ Client
 Request ID Middleware
   │
   ▼
-FastAPI Router
+FastAPI Router  ──►  /ask (JSON)  |  /ask/stream (one status event per step)
   │
   ▼
-Grounded Answer Service
-  │
-  ├──────────────► Retriever
-  │                    │
-  │                    ▼
-  │              Relevant Chunks
-  │                    │
-  │                    ▼
-  │              Context Builder
+resolve tax year  ──►  which Act governs: 1961 through 2025, 2025 from 2026
   │
   ▼
-LLM Client
+Retriever  ──►  embed → search → score floor → exact-section path → cap per section
+  │
+  ├── nothing retrieved ─────────────►  REFUSE. The model is not called.
   │
   ▼
-Grounded Answer + Sources
+Prompt builder  ──►  the provisions, plus six rules
+  │
+  ▼
+LLM Gateway (separate service)  ──►  the only thing that talks to a model
+  │
+  ▼
+Verify  ──►  every citation checked against what was supplied
+  │            fabricated references counted, not silently dropped
+  ▼
+Answer + verified citations, or a refusal with a reason
 ```
+
+### Two orchestrators, one set of stages
+
+The stages above live in `app/pipeline/steps.py` — one function each, none of
+them deciding what runs next. Two orchestrators call those same functions:
+
+- **linear** (`app/routers/ask.py`) — the straight line, no going back
+- **graph** (`app/graph/`) — a LangGraph graph that can branch and re-enter
+
+`PIPELINE=linear|graph` picks one. Because the stages are shared, switching
+cannot change what a stage does — only the order and the branching, which is
+what makes the two comparable in the eval harness.
+
+The graph adds three things a straight line cannot express, each behind its own
+flag so it can be measured on its own:
+
+| Flag | What it does |
+|---|---|
+| `GRAPH_WIDEN_ON_THIN_RETRIEVAL` | retrieved nothing under a year filter → search again without it |
+| `GRAPH_RETRY_ON_FABRICATION` | cited provisions and every one was invented → ask again, naming them |
+| `GRAPH_AGENT_ON_COMPARISON` | cross-Act questions → a tool-calling agent, where the model chooses each step |
+
+`make graph-mermaid` regenerates `docs/graph.mmd` from the compiled graph, so
+the diagram cannot drift from the wiring.
+
+### The agent branch
+
+For questions of the form "what does section X of the 1961 Act correspond to in
+the 2025 Act", step two cannot be formed until step one has returned — a fixed
+pipeline structurally cannot do it. So one branch hands the model four tools
+(`search_provisions`, `get_section`, `map_section`, `cannot_answer`) and lets it
+choose. Three ways out, and only two of them trust the model:
+
+1. it answers — no tool calls in its reply
+2. it calls `cannot_answer`, with a reason
+3. the step or token budget stops it — the backstop, written as a bounded loop
+   so the ceiling cannot depend on the model behaving
+
+Verification is unchanged and deliberately so: the agent's tools remember every
+provision they returned, and the same citation check runs over that union.
+Agency is not a side door around grounding.
 
 ---
 
@@ -111,8 +263,20 @@ grounded_answer_engine/
 │       │   ├── sections.py       spotting "section 139" in a question
 │       │   └── retriever.py      the policy: exact-first, cap, truncate
 │       │
+│       ├── pipeline/
+│       │   └── steps.py          ONE function per stage; none choose what runs next
+│       │
+│       ├── graph/               THE LANGGRAPH ORCHESTRATOR
+│       │   ├── state.py           what travels between nodes
+│       │   ├── nodes.py           thin wrappers + the routers that pick an edge
+│       │   └── build.py           the wiring, and why each bound is structural
+│       │
+│       ├── agent/               THE TOOL-CALLING LOOP
+│       │   ├── tools.py           four schemas and their handlers
+│       │   └── loop.py            turn-taking, three exits, two budgets
+│       │
 │       ├── routers/
-│       │   ├── ask.py            retrieve -> prompt -> generate -> verify cites
+│       │   ├── ask.py            the linear orchestrator, and both endpoints
 │       │   ├── search.py         retrieval only, no model, no cost
 │       │   └── health.py
 │       │
@@ -142,6 +306,7 @@ grounded_answer_engine/
 │   ├── run.py                   asks each one, scores six signals
 │   ├── grade.py                 the human pass over answer_correct
 │   ├── compare.py               tells a real change from run-to-run noise
+│   ├── measure-all.sh           three groups of three runs, one change per group
 │   └── PLAN.md                  what is measured, and why
 │
 └── data/                       gitignored except manifest.json
@@ -1132,33 +1297,44 @@ uvicorn app.main:create_app --factory --reload --port 8001
 
 ## System 2 — Grounding / RAG
 
-Planned:
+- [x] Document ingestion — two Act PDFs plus departmental guidance pages
+- [x] Document chunking — section-aware, with a naive strategy kept for A/B
+- [x] Embedding generation — 3,286 chunks over 1,423 sections
+- [x] Vector database integration — Qdrant, served or embedded on disk
+- [x] Retriever abstraction — `Embedder` and `VectorStore` protocols, one
+      registry entry each
+- [x] Top-k retrieval, with a score floor and a per-section cap
+- [x] Exact-section lookup — similarity search cannot find "section 234A"
+- [x] Grounded prompt construction — six rules, and the provisions
+- [x] Source attribution — citations verified against what was supplied
+- [x] Retrieval evaluation — 40 questions, six automatic signals, group
+      comparison
+- [x] Grounding failure handling — three refusal reasons, structurally decided
+- [x] End-to-end tests — 132, none needing an API key
 
-- [ ] Document ingestion
-- [ ] Document chunking
-- [ ] Embedding generation
-- [ ] Vector database integration
-- [ ] Retriever abstraction
-- [ ] Top-k retrieval
-- [ ] Context construction
-- [ ] Grounded prompt construction
-- [ ] Source attribution
-- [ ] Retrieval evaluation
-- [ ] Grounding failure handling
-- [ ] End-to-end RAG tests
+## System 3 — Orchestration
+
+- [x] Stages extracted so two orchestrators can share them
+- [x] LangGraph graph, interchangeable with the linear path
+- [x] Conditional branches: widen a starved search, retry a fabricated citation
+- [x] Tool-calling agent on the cross-Act branch, with step and token budgets
+- [x] Trajectory returned — which tools, in what order, and any repeats
+- [ ] Trajectory **scored** in the eval harness (`expected_tools`)
+- [ ] MCP server exposing the corpus as tools
 
 ## Production Hardening
 
-Planned:
-
+- [x] Deployment — two containers on AWS ECS Fargate, secrets in Parameter
+      Store, scale-to-zero
+- [x] Production configuration — timeout ladder, CORS, health checks
 - [ ] Metrics
 - [ ] Distributed tracing
-- [ ] Authentication
+- [ ] Authentication on the agent itself — today the console gates the UI, not
+      the API
 - [ ] Rate limiting
-- [ ] Deployment
-- [ ] Production configuration
-- [ ] Cost monitoring
-- [ ] Retrieval and answer quality evaluation
+- [ ] Cost monitoring per request
+- [ ] Reranking and hybrid retrieval
+- [ ] Adversarial evaluation — prompt injection through a retrieved passage
 
 ---
 
