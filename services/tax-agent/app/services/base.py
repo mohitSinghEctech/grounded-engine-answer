@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.progress import Progress
+
 
 @dataclass(frozen=True)
 class Generation:
@@ -44,4 +46,13 @@ class Retriever(Protocol):
         question: str,
         top_k: int,
         tax_year: int | None = None,
-    ) -> list[Passage]: ...
+        progress: Progress | None = None,
+    ) -> list[Passage]:
+        """Find passages, reporting each phase to `progress` if given.
+
+        The phases are part of the interface because the gap between
+        embedding and searching is where the time goes, and a caller that
+        wants to show a user what is happening needs to know which one it
+        is waiting on.
+        """
+        ...

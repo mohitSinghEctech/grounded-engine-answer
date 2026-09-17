@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import time
+from collections.abc import Sequence
+from typing import Any
 
 from openai import (
     APIConnectionError,
@@ -18,7 +20,7 @@ from app.errors import (
     UpstreamUnavailable,
 )
 from app.retry import calculate_retry_delay
-from app.services.base import LLMResult
+from app.services.base import LLMResult, ToolCall
 from app.vendors import Vendor, completion_kwargs
 
 logger = logging.getLogger(__name__)
@@ -40,12 +42,29 @@ class OpenAICompatibleClient:
         self.vendor = vendor
         self.model = model
 
-    async def _generate_once(self, prompt: str, max_tokens: int) -> LLMResult:
+    async def _generate_once(
+        self,
+        prompt: str | None,
+        max_tokens: int,
+        messages: Sequence[dict[str, Any]] | None = None,
+        tools: Sequence[dict[str, Any]] = (),
+    ) -> LLMResult:
+        # A prompt is just a one-message conversation. Everything below
+        # works on the conversation, so the tool loop and the plain
+        # single-shot path share one code path.
+        conversation = list(messages) if messages else [
+            {"role": "user", "content": prompt}
+        ]
+
+        # Only send `tools` when there are some: some providers reject an
+        # empty list, and an absent key is unambiguous.
+        extra: dict[str, Any] = {"tools": list(tools)} if tools else {}
 
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=conversation,
+                **extra,
                 **completion_kwargs(
                     vendor=self.vendor,
                     model=self.model,
@@ -106,9 +125,25 @@ class OpenAICompatibleClient:
         if not response.choices:
             raise InvalidUpstreamResponse("LLM returned no choices")
 
-        content = response.choices[0].message.content
+        message = response.choices[0].message
+        content = message.content
 
-        if content is None:
+        # Every tool the model asked for, carried through untouched.
+        tool_calls = tuple(
+            ToolCall(
+                id=call.id,
+                name=call.function.name,
+                arguments=call.function.arguments,
+            )
+            for call in (message.tool_calls or [])
+        )
+
+        # THE one change that makes tool calling work. Before this, empty
+        # content was always a broken response. Now it is the normal shape
+        # of "I want to call something" - the model puts its answer in
+        # tool_calls and leaves content null. Still an error when both are
+        # empty, because then the model said nothing at all.
+        if content is None and not tool_calls:
             raise InvalidUpstreamResponse("LLM returned no message content")
 
         finish_reason = response.choices[0].finish_reason
@@ -128,21 +163,34 @@ class OpenAICompatibleClient:
         reasoning_tokens = max(0, total_tokens - prompt_tokens - completion_tokens)
 
         return LLMResult(
-            text=content,
+            text=content or "",
             model=response.model,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             reasoning_tokens=reasoning_tokens,
             total_tokens=total_tokens,
             finish_reason=finish_reason,
+            tool_calls=tool_calls,
         )
 
-    async def generate(self, prompt: str, max_tokens: int) -> LLMResult:
+    async def generate(
+        self,
+        prompt: str | None = None,
+        max_tokens: int = 2000,
+        *,
+        messages: Sequence[dict[str, Any]] | None = None,
+        tools: Sequence[dict[str, Any]] = (),
+    ) -> LLMResult:
         retry_start = time.perf_counter()
 
         for attempt in range(self.settings.max_retries + 1):
             try:
-                return await self._generate_once(prompt=prompt, max_tokens=max_tokens)
+                return await self._generate_once(
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    messages=messages,
+                    tools=tools,
+                )
 
             except (UpstreamRateLimited, UpstreamUnavailable) as exc:
                 if attempt >= self.settings.max_retries:

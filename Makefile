@@ -27,19 +27,22 @@ PDF_1961   ?= data/raw/ita-1961.PDF
 # --- AWS --------------------------------------------------------------------
 AWS_REGION  ?= ap-south-1
 AWS_ACCOUNT ?= 268666185034
-ECR_REPO    ?= backend
+ECR_REPO       ?= backend
+AGENT_ECR_REPO ?= tax-agent
 ECS_CLUSTER ?= firstCluster
 ECS_SERVICE ?= api-task
-ECR_URI     := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(ECR_REPO)
+ECR_URI        := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(ECR_REPO)
+AGENT_ECR_URI  := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(AGENT_ECR_REPO)
 
 .DEFAULT_GOAL := help
 .PHONY: help install install-agent corpus-deps install-all run run-agent test lint \
         format format-check check parse parse-2025 parse-1961 index index-1961 \
-        index-naive index-embedded search corpus-stats build up down restart logs \
+        index-naive index-embedded index-standalone image-standalone search corpus-stats build up down restart logs \
         ps shell-agent shell-gateway clean qdrant-up qdrant-ui collections \
-        aws-audit aws-spend ecr-login ecr-push ecs-start ecs-stop ecs-status \
-        manifest manifest-check health ask api-search index-guidance reindex corpus-export \
-        eval eval-smoke eval-baseline grade grade-summary
+        aws-audit aws-spend ecr-login ecr-push ecr-push-agent ecr-images ecs-start ecs-stop ecs-status \
+        manifest manifest-check health ask ask-stream api-search index-guidance reindex corpus-export \
+        eval eval-smoke eval-baseline grade grade-summary \
+        graph-on graph-off graph-which graph-draw
 
 help: ## Show this help
 	@echo "Grounded Answer Engine"
@@ -123,11 +126,27 @@ index-naive: ## Build the naive baseline collection, for A/B comparison
 	$(PY) $(BUILDER)/scripts/index.py --strategy naive --pdf $(PDF_2025) --act ITA-2025 \
 		--qdrant $(QDRANT) --collection ita_naive
 
-index-embedded: ## Build the index on disk instead of a server (production shape)
+INDEX_PATH ?= data/index
+
+index-standalone: ## Build a COMPLETE on-disk index for the self-contained image
+	@rm -rf $(INDEX_PATH)
 	$(PY) $(BUILDER)/scripts/index.py --strategy sections --db $(DB) --act ITA-2025 \
-		--qdrant data/index --collection $(COLLECTION)
+		--qdrant $(INDEX_PATH) --collection $(COLLECTION)
 	$(PY) $(BUILDER)/scripts/index.py --strategy sections --db $(DB) --act ITA-1961 \
-		--qdrant data/index --collection $(COLLECTION)
+		--qdrant $(INDEX_PATH) --collection $(COLLECTION)
+	$(PY) $(BUILDER)/scripts/index.py --strategy guidance \
+		--qdrant $(INDEX_PATH) --collection $(COLLECTION)
+	@echo ""
+	@$(PY) -c "from qdrant_client import QdrantClient; \
+		c = QdrantClient(path='$(INDEX_PATH)'); \
+		i = c.get_collection('$(COLLECTION)'); \
+		print(f'  $(INDEX_PATH): {i.points_count} points, {i.config.params.vectors.size} dims'); \
+		c.close()"
+
+# Kept as an alias; index-standalone is the one to use, because this name
+# used to omit the guidance pages and so produced an index that could not
+# answer any procedural question.
+index-embedded: index-standalone ## Deprecated alias for index-standalone
 
 # Usage: make search Q="deduction for life insurance premium" YEAR=2027
 Q     ?= deduction for life insurance premium
@@ -175,6 +194,22 @@ shell-gateway: ## Shell inside the running llm-gateway container
 clean: ## Stop services AND delete the qdrant volume (destroys the index)
 	docker compose down -v
 
+##@ Pipeline
+graph-on: ## Switch /ask to the LangGraph pipeline and restart the agent
+	PIPELINE=graph docker compose up -d --build tax-agent
+
+graph-off: ## Switch /ask back to the linear pipeline
+	PIPELINE=linear docker compose up -d --build tax-agent
+
+graph-which: ## Which orchestrator the running agent is using
+	@docker compose exec tax-agent printenv PIPELINE || echo "linear (unset)"
+
+graph-draw: ## Print the graph's nodes and edges. Needs no running service
+	@cd $(AGENT) && $(PY) -c "from app.graph.build import build_ask_graph; \
+		g = build_ask_graph().get_graph(); \
+		print('nodes:', ', '.join(n for n in g.nodes if not n.startswith('__'))); \
+		[print(f'  {e.source:14} -> {e.target:14} {e.data or \"\"}') for e in g.edges]"
+
 ##@ Qdrant
 qdrant-up: ## Start only Qdrant
 	docker compose up -d qdrant
@@ -195,6 +230,12 @@ collections: ## List collections with point counts
 ##@ API smoke tests
 health: ## Check both services are answering
 	@curl -s -m 3 http://localhost:8080/health && echo "" || echo "  tax-agent down"
+
+ask-stream: ## Watch the status stream live. make ask-stream Q="..."
+	@curl -sN -X POST http://localhost:8080/ask/stream \
+		-H 'Content-Type: application/json' \
+		-d '{"question":"$(Q)","max_tokens":1200}' \
+		| $(PY) eval/watch.py
 
 ask: ## Ask a question through the full stack. make ask Q="..."
 	@curl -s -X POST http://localhost:8080/ask -H 'Content-Type: application/json' \
@@ -253,10 +294,43 @@ ecr-login: ## Authenticate docker to ECR (token lasts 12 hours)
 		docker login --username AWS --password-stdin $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com
 
 # Fargate is x86; your Mac is arm64. Without --platform the task fails to pull.
-ecr-push: ## Build for amd64 and push. make ecr-push TAG=v3
+# Which service goes to ECR. The deployed task (api-task) runs the
+# llm-gateway on port 8000, so that is the default - this target used to
+# hardcode the tax-agent, which would have pushed an image listening on
+# 8080 and demanding QDRANT_URL into the repo the gateway task pulls from.
+# The task would then fail its health check and never start.
+SERVICE ?= $(GATEWAY)
+
+ecr-push: ## Build for amd64 and push. make ecr-push TAG=v3 [SERVICE=services/tax-agent]
+	@echo "  service   $(SERVICE)"
+	@echo "  image     $(ECR_URI):$(or $(TAG),latest)"
 	docker build --platform linux/amd64 --provenance=false \
-		-t $(ECR_URI):$(or $(TAG),latest) $(AGENT)
+		-t $(ECR_URI):$(or $(TAG),latest) $(SERVICE)
 	docker push $(ECR_URI):$(or $(TAG),latest)
+
+image-standalone: ## Build the self-contained tax-agent (index baked in)
+	@test -d $(INDEX_PATH) || { echo "  no index at $(INDEX_PATH) - run: make index-standalone"; exit 1; }
+	docker build --platform linux/amd64 --provenance=false \
+		-t tax-agent:dev $(AGENT)
+	docker build --platform linux/amd64 --provenance=false \
+		-f $(AGENT)/Dockerfile.standalone \
+		-t tax-agent:standalone .
+	@echo ""
+	@docker images tax-agent --format "  {{.Repository}}:{{.Tag}}  {{.Size}}"
+
+ecr-push-agent: ## Push the standalone tax-agent. make ecr-push-agent TAG=v1
+	@test -n "$(TAG)" || { echo "  give a TAG, e.g. make ecr-push-agent TAG=v1"; exit 1; }
+	@test -d $(INDEX_PATH) || { echo "  no index - run: make index-standalone"; exit 1; }
+	$(MAKE) image-standalone
+	docker tag tax-agent:standalone $(AGENT_ECR_URI):$(TAG)
+	docker push $(AGENT_ECR_URI):$(TAG)
+	@echo ""
+	@echo "  pushed $(AGENT_ECR_URI):$(TAG)"
+
+ecr-images: ## What is already in the ECR repo, oldest first
+	@aws ecr describe-images --repository-name $(ECR_REPO) --region $(AWS_REGION) \
+		--query 'sort_by(imageDetails,&imagePushedAt)[].{tag:imageTags,pushed:imagePushedAt}' \
+		--output table
 
 ecs-start: ## Scale the ECS service to 1 task (~$0.46/day)
 	aws ecs update-service --cluster $(ECS_CLUSTER) --service $(ECS_SERVICE) \

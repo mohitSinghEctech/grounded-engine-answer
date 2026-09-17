@@ -1,44 +1,89 @@
+import asyncio
 import logging
-import time
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 
 from app.config import Settings, get_settings
 from app.dependencies import get_llm_gateway, get_retriever
-from app.prompt import REFUSAL, build_prompt, split_citations
-from app.schemas import (
-    AskRequest,
-    AskResponse,
-    Citation,
-    ErrorResponse,
-    RefusalReason,
-)
-from app.scope import split_marker
-from app.services.base import LLMGateway, Passage, Retriever
-from app.tax_year import extract_tax_year
+from app.errors import AppError
+from app.graph.build import run_graph_pipeline
+from app.pipeline import steps
+from app.progress import Progress, Step
+from app.schemas import AskRequest, AskResponse, ErrorResponse
+from app.services.base import LLMGateway, Retriever
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ask"])
 
 
-def _resolve_tax_year(request: AskRequest) -> tuple[int | None, str]:
-    if request.tax_year is not None:
-        return request.tax_year, "request"
+async def run_linear_pipeline(
+    request: AskRequest,
+    retriever: Retriever,
+    gateway: LLMGateway,
+    settings: Settings,
+    progress: Progress | None = None,
+) -> AskResponse:
+    """Retrieve, ground, generate, verify - in that order, no going back.
 
-    detected = extract_tax_year(request.question)
+    Every stage is a call into `app/pipeline/steps.py`, which the graph in
+    `app/graph/` also calls. This function contributes only the order and
+    the one early exit, so it stays readable as the shape of the pipeline
+    rather than its implementation.
+    """
+    context = steps.Context.open(
+        request=request,
+        retriever=retriever,
+        gateway=gateway,
+        settings=settings,
+        progress=progress,
+    )
 
-    return detected, ("question" if detected else "none")
+    await steps.announce(context)
+
+    year = steps.resolve_tax_year(request)
+
+    await steps.report_year(context, year)
+
+    retrieval = await steps.retrieve(context, year)
+
+    # Refusal is structural: with nothing retrieved the model is never
+    # called, so it cannot be talked into answering from memory.
+    if not retrieval.passages:
+        return await steps.refuse_nothing_retrieved(context, year, retrieval)
+
+    prompt = await steps.make_prompt(context, retrieval.passages)
+
+    result, llm_ms = await steps.generate(context, prompt)
+
+    verification = await steps.verify(context, result, retrieval.passages)
+
+    return await steps.finalise(context, year, retrieval, result, verification, llm_ms)
 
 
-def _corpus_date(passages: list[Passage], settings: Settings) -> str:
-    # The date belongs to the data that was retrieved, not to this process,
-    # so it stays true even if the service outlives the index that built it.
-    for passage in passages:
-        if passage.corpus_date and passage.corpus_date != "unknown":
-            return passage.corpus_date
+async def run_pipeline(
+    request: AskRequest,
+    retriever: Retriever,
+    gateway: LLMGateway,
+    settings: Settings,
+    progress: Progress | None = None,
+) -> AskResponse:
+    """One question, one answer, whichever orchestrator is configured.
 
-    return settings.corpus_date
+    The only implementation of /ask. The streaming endpoint passes a
+    listening `Progress` and the plain one passes nothing, so neither can
+    drift from the other as the pipeline changes.
+    """
+    if settings.pipeline == "graph":
+        return await run_graph_pipeline(
+            request, retriever, gateway, settings, progress=progress
+        )
+
+    return await run_linear_pipeline(
+        request, retriever, gateway, settings, progress=progress
+    )
 
 
 @router.post(
@@ -59,155 +104,98 @@ async def ask(
     gateway: LLMGateway = Depends(get_llm_gateway),
     settings: Settings = Depends(get_settings),
 ):
-    started = time.perf_counter()
+    """One question, one JSON answer. Nothing is reported while it works."""
+    return await run_pipeline(request, retriever, gateway, settings)
 
-    tax_year, tax_year_source = _resolve_tax_year(request)
 
-    logger.info(
-        "Ask started | tax_year=%s | source=%s | top_k=%s",
-        tax_year,
-        tax_year_source,
-        settings.retrieval_top_k,
-    )
+async def _stream(
+    request: AskRequest,
+    retriever: Retriever,
+    gateway: LLMGateway,
+    settings: Settings,
+) -> AsyncIterator[str]:
+    """Server-Sent Events: every step as it happens, then the answer.
 
-    passages = await retriever.search(
-        question=request.question,
-        top_k=settings.retrieval_top_k,
-        tax_year=tax_year,
-    )
+    The pipeline runs as a separate task and pushes steps onto a queue;
+    this generator drains the queue and writes frames. That is what lets
+    the steps leave the building while the work is still going on - an
+    ordinary `await` would finish everything before yielding anything.
 
-    retrieval_ms = int((time.perf_counter() - started) * 1000)
+    The answer itself is NOT streamed. Citations can only be checked once
+    the text is complete, and around two answers in forty try to cite a
+    provision that does not exist, so streaming the prose would mean
+    showing a reader a fabricated section and retracting it afterwards.
+    """
+    queue: asyncio.Queue[Step | None] = asyncio.Queue()
+    progress = Progress(queue=queue)
 
-    # Refusal is structural: with nothing retrieved the model is never called,
-    # so it cannot be talked into answering from memory.
-    if not passages:
-        logger.info(
-            "Ask refused, nothing retrieved | retrieval_ms=%s | tax_year=%s",
-            retrieval_ms,
-            tax_year,
-        )
-
-        return AskResponse(
-            answer=REFUSAL,
-            refused=True,
-            refusal_reason="nothing_retrieved",
-            citations=[],
-            corpus_date=settings.corpus_date,
-            tax_year=tax_year,
-            tax_year_source=tax_year_source,
-            retrieved=0,
-            latency_ms=int((time.perf_counter() - started) * 1000),
-            retrieval_ms=retrieval_ms,
-        )
-
-    generation_started = time.perf_counter()
-
-    result = await gateway.generate(
-        prompt=build_prompt(request.question, passages),
-        max_tokens=request.max_tokens,
-    )
-
-    llm_ms = int((time.perf_counter() - generation_started) * 1000)
-
-    # The model's own signal, taken off the front of the answer before
-    # anything else reads it. The model marks the case; this service decides
-    # what that means.
-    declared, answer_text = split_marker(result.text)
-
-    cited, unsupported = split_citations(answer_text, passages)
-
-    if unsupported:
-        # The model cited a provision it was never given. Harmless to the
-        # caller, but the first sign the prompt is losing control of it.
-        logger.warning(
-            "Unsupported citations in answer | count=%s | refs=%s",
-            len(unsupported),
-            sorted(f"{act} s.{number}" for act, number in unsupported),
-        )
-
-    latency_ms = int((time.perf_counter() - started) * 1000)
-
-    if result.finish_reason == "length":
-        # Reasoning tokens count against max_tokens, so a model that thinks
-        # hard can exhaust the budget before it finishes writing.
-        logger.warning(
-            "Answer truncated | completion_tokens=%s | reasoning_tokens=%s | "
-            "raise max_tokens",
-            result.completion_tokens,
-            result.reasoning_tokens,
-        )
-
-    # Ordered by what the caller most needs to know. Out of scope outranks
-    # ungrounded: a question that should not be answered was not answered
-    # badly, and the two call for different fixes - a prompt change versus a
-    # retrieval change.
-    # Out of scope outranks ungrounded: a question that should not have been
-    # answered was not answered badly, and the two call for different fixes -
-    # a prompt change versus a retrieval change.
-    #
-    # A NOT_IN_CORPUS marker was tried here too, so the model could declare
-    # "I read these and they do not cover it" rather than have it inferred
-    # from an absent citation. It scored worse: the model emitted it on
-    # questions it could have answered in part, refusing wholesale where
-    # rule 4 wanted a partial answer. Left in RefusalReason and in
-    # scope.py for a later attempt, but not asked for.
-    refusal_reason: RefusalReason
-    if declared == "out_of_scope":
-        refusal_reason = "out_of_scope"
-    elif cited:
-        refusal_reason = "none"
-    else:
-        refusal_reason = "not_grounded"
-
-    refused = refusal_reason != "none"
-
-    logger.info(
-        "Ask completed | refused=%s | refusal_reason=%s | retrieved=%s | cited=%s | "
-        "unsupported=%s | retrieval_ms=%s | llm_ms=%s | latency_ms=%s | "
-        "model=%s | total_tokens=%s | finish_reason=%s",
-        refused,
-        refusal_reason,
-        len(passages),
-        len(cited),
-        len(unsupported),
-        retrieval_ms,
-        llm_ms,
-        latency_ms,
-        result.model,
-        result.total_tokens,
-        result.finish_reason,
-    )
-
-    return AskResponse(
-        answer=answer_text,
-        refused=refused,
-        refusal_reason=refusal_reason,
-        citations=[]
-        if refusal_reason == "out_of_scope"
-        else [
-            Citation(
-                act=p.act,
-                section_number=p.section_number,
-                section_title=p.section_title,
-                page_start=p.page_start,
-                score=p.score,
+    async def run() -> AskResponse:
+        try:
+            return await run_pipeline(
+                request, retriever, gateway, settings, progress=progress
             )
-            for p in cited
-        ],
-        unsupported_citations=sorted(
-            f"{act} s.{number}" for act, number in unsupported
-        ),
-        corpus_date=_corpus_date(passages, settings),
-        tax_year=tax_year,
-        tax_year_source=tax_year_source,
-        retrieved=len(passages),
-        latency_ms=latency_ms,
-        retrieval_ms=retrieval_ms,
-        llm_ms=llm_ms,
-        model=result.model,
-        prompt_tokens=result.prompt_tokens,
-        completion_tokens=result.completion_tokens,
-        reasoning_tokens=result.reasoning_tokens,
-        total_tokens=result.total_tokens,
-        finish_reason=result.finish_reason,
+        finally:
+            # Always close the queue, so a failure cannot hang the stream.
+            await progress.finish()
+
+    task = asyncio.create_task(run())
+
+    while True:
+        step = await queue.get()
+
+        if step is None:
+            break
+
+        yield step.to_sse()
+
+    try:
+        response = await task
+    except AppError as exc:
+        # The same error vocabulary the JSON endpoint uses. A stream has
+        # already sent HTTP 200, so the failure has to arrive as an event.
+        yield Step(
+            "failed",
+            {"error_code": exc.error_code, "message": exc.message},
+        ).to_sse(event="error")
+        return
+    except Exception:
+        logger.exception("Streaming ask failed")
+        yield Step(
+            "failed",
+            {"error_code": "INTERNAL_ERROR", "message": "Something went wrong."},
+        ).to_sse(event="error")
+        return
+
+    yield Step("done", response.model_dump()).to_sse(event="result")
+
+
+@router.post(
+    "/ask/stream",
+    responses={
+        200: {
+            "content": {"text/event-stream": {}},
+            "description": (
+                "Server-Sent Events. One `status` frame per pipeline step, "
+                "then a single `result` frame carrying the same body /ask "
+                "returns, or an `error` frame."
+            ),
+        },
+        422: {"model": ErrorResponse},
+    },
+)
+async def ask_stream(
+    request: AskRequest,
+    retriever: Retriever = Depends(get_retriever),
+    gateway: LLMGateway = Depends(get_llm_gateway),
+    settings: Settings = Depends(get_settings),
+):
+    return StreamingResponse(
+        _stream(request, retriever, gateway, settings),
+        media_type="text/event-stream",
+        headers={
+            # Without these a proxy may buffer the whole response and
+            # deliver it at the end, which defeats the point entirely.
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )

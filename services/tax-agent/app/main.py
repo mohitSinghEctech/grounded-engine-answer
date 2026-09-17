@@ -5,18 +5,17 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from openai import AsyncOpenAI
-from qdrant_client import AsyncQdrantClient
 
 from app.config import get_settings
 from app.errors import AppError
 from app.logging_config import configure_logging
 from app.middleware import RequestIDMiddleware, request_id_context
+from app.retrieval import GroundedRetriever, embedders, stores
 from app.routers import ask, health, search
 from app.schemas import ErrorResponse
 from app.services.gateway_client import HttpLLMGateway
-from app.services.qdrant_retriever import QdrantRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +29,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     logger.info(
-        "Application starting | llm_gateway_url=%s | qdrant_url=%s | collection=%s",
+        "Application starting | llm_gateway_url=%s | embedder=%s | store=%s",
         settings.llm_gateway_url,
-        settings.qdrant_url,
-        settings.qdrant_collection,
+        settings.embedder_provider,
+        settings.vector_store_provider,
     )
 
     client = httpx.AsyncClient(
@@ -42,15 +41,13 @@ async def lifespan(app: FastAPI):
         event_hooks={"request": [_propagate_request_id]},
     )
 
-    qdrant = AsyncQdrantClient(url=settings.qdrant_url)
-
-    embedder = AsyncOpenAI(
-        api_key=settings.embedding_api_key,
-        base_url=settings.embedding_base_url,
-        max_retries=0,
+    # Both sides are chosen by name, so swapping either is a config
+    # change. GroundedRetriever holds the policy and knows neither.
+    retriever = GroundedRetriever(
+        embedder=embedders.create(settings),
+        store=stores.create(settings),
+        settings=settings,
     )
-
-    retriever = QdrantRetriever(qdrant=qdrant, embedder=embedder, settings=settings)
 
     # Compose starts qdrant in parallel and ECS gives no ordering at all, so
     # the index may not answer on the first try. A RuntimeError is a config
@@ -80,7 +77,9 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down...")
 
     await client.aclose()
-    await qdrant.close()
+    # The retriever owns its store, so it owns closing it - this function no
+    # longer knows whether there is a connection to close at all.
+    await retriever.close()
 
 
 async def app_error_handler(request: Request, exc: AppError):
@@ -154,6 +153,22 @@ def create_app() -> FastAPI:
         redoc_url=None if is_prod else "/redoc",
         openapi_url=None if is_prod else "/openapi.json",
     )
+
+    origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+
+    if origins:
+        # Credentials stay off. This service has no cookies and no session,
+        # so a browser needs nothing but the response body - and allowing
+        # credentials alongside "*" is rejected by browsers anyway.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Content-Type"],
+        )
+
+        logger.info("CORS enabled | origins=%s", origins)
 
     app.add_middleware(RequestIDMiddleware)
 

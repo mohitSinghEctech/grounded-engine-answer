@@ -43,10 +43,18 @@ class Vendor:
     # Parameter name for the output ceiling on non-reasoning models.
     token_limit_param: str = "max_tokens"
 
-    # Reasoning models want max_completion_tokens instead, and are the only
-    # ones that accept reasoning_effort. Matched by prefix, so a pinned date
-    # suffix (gpt-5-mini-2025-08-07) resolves the same as the alias.
+    # Models that accept reasoning_effort. Matched by prefix, so a pinned
+    # date suffix (gpt-5-mini-2025-08-07) resolves the same as the alias.
     reasoning_prefixes: tuple[str, ...] = ()
+
+    # Whether a reasoning model also needs max_completion_tokens in place of
+    # max_tokens. True for OpenAI, where reasoning models reject max_tokens
+    # outright. False for Gemini, which accepts reasoning_effort on every
+    # model but has served max_tokens in production for days - and where
+    # switching to max_completion_tokens made a small budget fail outright:
+    # 79 reasoning tokens consumed a ceiling of 20, so the model spent the
+    # whole allowance thinking and returned no content at all.
+    reasoning_needs_completion_tokens: bool = True
 
     # Substrings marking a model as cheap. Used only to decide whether to
     # warn; it never changes the request.
@@ -75,6 +83,8 @@ VENDORS: dict[str, Vendor] = {
         # Gemini accepts reasoning_effort across the board, so every model
         # counts as a reasoning model for request-shaping purposes.
         reasoning_prefixes=("gemini",),
+        # Gemini takes max_tokens, not max_completion_tokens.
+        reasoning_needs_completion_tokens=False,
     ),
 }
 
@@ -101,17 +111,20 @@ def completion_kwargs(
     Everything else about the call - model, messages - is identical across
     vendors, so only the parts that differ live here.
     """
-    if vendor.is_reasoning(model):
-        # A reasoning model spends part of its ceiling on thinking, so the
-        # ceiling has to be the one that covers both.
-        kwargs: dict[str, Any] = {"max_completion_tokens": max_tokens}
+    reasoning = vendor.is_reasoning(model)
 
-        if reasoning_effort:
-            kwargs["reasoning_effort"] = reasoning_effort
+    ceiling = (
+        "max_completion_tokens"
+        if reasoning and vendor.reasoning_needs_completion_tokens
+        else vendor.token_limit_param
+    )
 
-        return kwargs
+    kwargs: dict[str, Any] = {ceiling: max_tokens}
 
-    return {vendor.token_limit_param: max_tokens}
+    if reasoning and reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
+
+    return kwargs
 
 
 def describe(vendor: Vendor, model: str) -> None:
@@ -124,7 +137,7 @@ def describe(vendor: Vendor, model: str) -> None:
         vendor.base_url,
         vendor.is_reasoning(model),
         "max_completion_tokens"
-        if vendor.is_reasoning(model)
+        if vendor.is_reasoning(model) and vendor.reasoning_needs_completion_tokens
         else vendor.token_limit_param,
     )
 

@@ -1,0 +1,36 @@
+# The deployable tax-agent: one container, no Qdrant server, no sidecar.
+#
+# The ordinary Dockerfile builds the service alone and expects a Qdrant
+# server at QDRANT_URL - right for local development, where compose starts
+# one alongside. This variant bakes the index in instead, so the image needs
+# nothing but an LLM gateway URL and an embedding key. That is what makes it
+# deployable to a platform that runs a single container: Hugging Face
+# Spaces, Cloud Run, App Runner, a Fargate task on its own.
+#
+# It layers on the base image rather than repeating it, so the two cannot
+# drift apart. Build both in order:
+#
+#     make image-standalone
+#
+# The index is ~28 MB and is READ at request time, never written - except
+# for the lock file Qdrant's local mode creates, which is why the directory
+# is owned by appuser rather than copied read-only.
+#
+# Build context is the repository root, because the index lives at
+# data/index and Docker cannot copy from outside its context.
+
+ARG BASE=tax-agent:dev
+FROM ${BASE}
+
+USER root
+
+COPY --chown=appuser:appuser data/index/ /app/data/index/
+
+USER appuser
+
+ENV VECTOR_STORE_PROVIDER=qdrant_embedded \
+    QDRANT_PATH=/app/data/index
+
+# Deliberately not set here: LLM_GATEWAY_URL and EMBEDDING_API_KEY. They
+# differ per environment and belong in the platform's own secret store, not
+# in an image that gets pushed to a registry.

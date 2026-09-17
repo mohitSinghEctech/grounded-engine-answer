@@ -1,0 +1,441 @@
+"""The graph, and the two branches only it can take.
+
+Two things are pinned here. First, parity: with both branch flags off the
+graph must answer exactly as the straight line does, because both call the
+same stages in `app/pipeline/steps.py`. Parity is what lets an eval run
+attribute a score change to a branch rather than to the rewrite.
+
+Second, the branches: each fires only in the case it was built for, and
+each is bounded, so a model that misbehaves every time cannot make the
+graph loop.
+"""
+
+import asyncio
+import functools
+
+import pytest
+
+from app.config import Settings
+from app.graph.build import run_graph_pipeline
+from app.pipeline import steps
+from app.progress import Progress, Step
+from app.routers.ask import run_linear_pipeline
+from app.schemas import AskRequest
+from app.services.base import Generation, Passage
+
+
+def sync(async_test):
+    """Run an async test function without a pytest plugin.
+
+    The rest of this suite is synchronous and the project's test
+    dependencies are just pytest, so rather than add pytest-asyncio for
+    one module, each async test gets its own event loop here.
+    `functools.wraps` keeps the signature pytest reads, so fixtures and
+    `parametrize` still work.
+    """
+
+    @functools.wraps(async_test)
+    def wrapper(*args, **kwargs):
+        return asyncio.run(async_test(*args, **kwargs))
+
+    return wrapper
+
+
+def make_settings(**overrides) -> Settings:
+    return Settings(
+        llm_gateway_url="http://gateway.invalid",
+        embedding_api_key="test-key",
+        corpus_date="2026-09-14",
+        **overrides,
+    )
+
+
+def passage(section_number: str = "80D", score: float = 0.9) -> Passage:
+    return Passage(
+        text=f"text of {section_number}",
+        score=score,
+        act="ITA-1961",
+        section_number=section_number,
+        section_title="Deduction in respect of health insurance premia",
+        page_start=12,
+        corpus_date="2026-09-14",
+    )
+
+
+class ScriptedRetriever:
+    """Returns a prepared result per call, and records how it was asked.
+
+    Two results means "the filtered search found nothing, the unfiltered
+    one did" can be set up exactly, which is the only situation the widen
+    branch exists for.
+    """
+
+    def __init__(self, *results: list[Passage]):
+        self.results = list(results)
+        self.calls: list[int | None] = []
+
+    async def search(self, question, top_k, tax_year=None, progress=None):
+        self.calls.append(tax_year)
+
+        if not self.results:
+            return []
+
+        return self.results.pop(0) if len(self.results) > 1 else self.results[0]
+
+
+class ScriptedGateway:
+    """Answers with the next scripted text, and keeps every prompt it saw."""
+
+    def __init__(self, *texts: str):
+        self.texts = list(texts)
+        self.prompts: list[str] = []
+
+    async def generate(self, prompt: str, max_tokens: int) -> Generation:
+        self.prompts.append(prompt)
+
+        text = self.texts.pop(0) if len(self.texts) > 1 else self.texts[0]
+
+        return Generation(
+            text=text,
+            model="stub-model",
+            prompt_tokens=100,
+            completion_tokens=20,
+            reasoning_tokens=0,
+            total_tokens=120,
+            finish_reason="stop",
+        )
+
+
+class Recorder(Progress):
+    """A Progress that keeps the steps instead of queueing them."""
+
+    def __init__(self):
+        super().__init__(queue=None)
+        self.steps: list[Step] = []
+
+    async def emit(self, name: str, **detail) -> None:
+        self.steps.append(Step(name=name, detail=detail))
+
+    def names(self) -> list[str]:
+        return [step.name for step in self.steps]
+
+
+# --------------------------------------------------------------------------
+# parity
+# --------------------------------------------------------------------------
+
+#: Every field that describes the outcome. Timings are excluded: they differ
+#: run to run by microseconds and say nothing about behaviour.
+OUTCOME_FIELDS = (
+    "answer",
+    "refused",
+    "refusal_reason",
+    "citations",
+    "unsupported_citations",
+    "corpus_date",
+    "tax_year",
+    "tax_year_source",
+    "retrieved",
+    "model",
+    "finish_reason",
+)
+
+
+@sync
+@pytest.mark.parametrize(
+    "answer_text",
+    [
+        pytest.param("Premium deduction (ITA-1961 s.80D).", id="grounded"),
+        pytest.param("REFUSE: OUT_OF_SCOPE I cannot advise.", id="out_of_scope"),
+        pytest.param("Something with no citation at all.", id="not_grounded"),
+        pytest.param("See ITA-1961 s.99Z.", id="fabricated"),
+    ],
+)
+async def test_graph_matches_linear_outcome(answer_text):
+    """Same question, same fakes, same answer - whichever orchestrator runs."""
+    settings = make_settings(pipeline="graph")
+
+    linear = await run_linear_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        ScriptedGateway(answer_text),
+        settings,
+    )
+    graph = await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        ScriptedGateway(answer_text),
+        settings,
+    )
+
+    for field in OUTCOME_FIELDS:
+        assert getattr(graph, field) == getattr(linear, field), field
+
+
+@sync
+async def test_graph_matches_linear_when_nothing_retrieved():
+    settings = make_settings()
+
+    linear = await run_linear_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([]),
+        ScriptedGateway("x"),
+        settings,
+    )
+    graph = await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([]),
+        ScriptedGateway("x"),
+        settings,
+    )
+
+    assert graph.refusal_reason == linear.refusal_reason == "nothing_retrieved"
+
+    for field in OUTCOME_FIELDS:
+        assert getattr(graph, field) == getattr(linear, field), field
+
+
+@sync
+async def test_graph_never_calls_the_model_with_nothing_retrieved():
+    """The structural guarantee has to survive the rewrite."""
+    gateway = ScriptedGateway("should never be asked")
+
+    response = await run_graph_pipeline(
+        AskRequest(question="80D?"), ScriptedRetriever([]), gateway, make_settings()
+    )
+
+    assert gateway.prompts == []
+    assert response.refused
+
+
+@sync
+async def test_graph_emits_the_same_steps_as_linear():
+    """The UI and eval/watch.py read these names, so they are a contract."""
+    settings = make_settings()
+
+    linear_steps = Recorder()
+    await run_linear_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        ScriptedGateway("Premium (ITA-1961 s.80D)."),
+        settings,
+        progress=linear_steps,
+    )
+
+    graph_steps = Recorder()
+    await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        ScriptedGateway("Premium (ITA-1961 s.80D)."),
+        settings,
+        progress=graph_steps,
+    )
+
+    assert graph_steps.names() == linear_steps.names()
+
+
+# --------------------------------------------------------------------------
+# branch: widen on thin retrieval
+# --------------------------------------------------------------------------
+
+
+@sync
+async def test_widen_searches_again_without_the_year_filter():
+    retriever = ScriptedRetriever([], [passage()])
+    gateway = ScriptedGateway("Premium (ITA-1961 s.80D).")
+    recorder = Recorder()
+
+    response = await run_graph_pipeline(
+        AskRequest(question="80D?", tax_year=2024),
+        retriever,
+        gateway,
+        make_settings(graph_widen_on_thin_retrieval=True),
+        progress=recorder,
+    )
+
+    # Asked with the filter, then without it.
+    assert retriever.calls == [2024, None]
+    assert "widening" in recorder.names()
+    assert not response.refused
+    assert response.refusal_reason == "none"
+
+
+@sync
+async def test_widen_refuses_when_the_wider_search_is_also_empty():
+    """One extra search, not a loop."""
+    retriever = ScriptedRetriever([], [])
+
+    response = await run_graph_pipeline(
+        AskRequest(question="80D?", tax_year=2024),
+        retriever,
+        ScriptedGateway("never asked"),
+        make_settings(graph_widen_on_thin_retrieval=True),
+    )
+
+    assert retriever.calls == [2024, None]
+    assert response.refusal_reason == "nothing_retrieved"
+
+
+@sync
+async def test_widen_does_not_fire_without_a_year_to_drop():
+    """No filter was applied, so there is nothing for widening to relax."""
+    retriever = ScriptedRetriever([])
+
+    await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        retriever,
+        ScriptedGateway("never asked"),
+        make_settings(graph_widen_on_thin_retrieval=True),
+    )
+
+    assert retriever.calls == [None]
+
+
+@sync
+async def test_widen_is_off_by_default():
+    retriever = ScriptedRetriever([])
+
+    await run_graph_pipeline(
+        AskRequest(question="80D?", tax_year=2024),
+        retriever,
+        ScriptedGateway("never asked"),
+        make_settings(),
+    )
+
+    assert retriever.calls == [2024]
+
+
+# --------------------------------------------------------------------------
+# branch: retry on fabrication
+# --------------------------------------------------------------------------
+
+
+@sync
+async def test_retry_asks_again_naming_the_invented_citation():
+    gateway = ScriptedGateway(
+        "See ITA-1961 s.99Z.",  # invented
+        "Premium (ITA-1961 s.80D).",  # corrected
+    )
+    recorder = Recorder()
+
+    response = await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(graph_retry_on_fabrication=True),
+        progress=recorder,
+    )
+
+    assert len(gateway.prompts) == 2
+    # The correction has to name the specific reference, not just repeat
+    # the rule the first attempt already had.
+    assert "ITA-1961 s.99Z" in gateway.prompts[1]
+    assert "retrying" in recorder.names()
+
+    assert response.refusal_reason == "none"
+    assert response.unsupported_citations == []
+    assert [c.section_number for c in response.citations] == ["80D"]
+
+
+@sync
+async def test_retry_gives_up_after_one_extra_attempt():
+    """A model that fabricates every time must not loop."""
+    gateway = ScriptedGateway("See ITA-1961 s.99Z.")
+
+    response = await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(graph_retry_on_fabrication=True),
+    )
+
+    assert len(gateway.prompts) == 2
+    assert response.refusal_reason == "not_grounded"
+    assert response.unsupported_citations == ["ITA-1961 s.99Z"]
+
+
+@sync
+async def test_retry_does_not_fire_when_one_citation_held_up():
+    """Partly fabricated is still grounded, and re-asking risks the good part."""
+    gateway = ScriptedGateway("Premium (ITA-1961 s.80D), see also ITA-1961 s.99Z.")
+
+    response = await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(graph_retry_on_fabrication=True),
+    )
+
+    assert len(gateway.prompts) == 1
+    assert response.refusal_reason == "none"
+    assert response.unsupported_citations == ["ITA-1961 s.99Z"]
+
+
+@sync
+async def test_retry_does_not_fire_on_an_uncited_answer():
+    """Nothing cited is a retrieval failure; a corrected prompt cannot fix it."""
+    gateway = ScriptedGateway("No citation here.")
+
+    response = await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(graph_retry_on_fabrication=True),
+    )
+
+    assert len(gateway.prompts) == 1
+    assert response.refusal_reason == "not_grounded"
+
+
+@sync
+async def test_retry_is_off_by_default():
+    gateway = ScriptedGateway("See ITA-1961 s.99Z.")
+
+    await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(),
+    )
+
+    assert len(gateway.prompts) == 1
+
+
+# --------------------------------------------------------------------------
+# the retry note itself
+# --------------------------------------------------------------------------
+
+
+def test_prompt_is_unchanged_without_a_note():
+    """A first attempt must be byte-identical to the pre-graph prompt."""
+    from app.prompt import build_prompt
+
+    assert build_prompt("q", [passage()]) == build_prompt("q", [passage()], note=None)
+
+
+def test_note_lands_before_the_answer_cue():
+    from app.prompt import build_prompt
+
+    prompt = build_prompt("q", [passage()], note="CORRECTION")
+
+    assert prompt.index("CORRECTION") < prompt.index("Answer:")
+    assert prompt.endswith("Answer:")
+
+
+def test_fabricated_only_distinguishes_the_retryable_case():
+    both = steps.Verification(
+        declared=None,
+        answer_text="x",
+        cited=[passage()],
+        unsupported={("ITA-1961", "99Z")},
+    )
+    invented_only = steps.Verification(
+        declared=None, answer_text="x", cited=[], unsupported={("ITA-1961", "99Z")}
+    )
+    nothing = steps.Verification(
+        declared=None, answer_text="x", cited=[], unsupported=set()
+    )
+
+    assert not both.fabricated_only
+    assert invented_only.fabricated_only
+    assert not nothing.fabricated_only

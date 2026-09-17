@@ -38,6 +38,20 @@ services:
       # model surfaces as GATEWAY_TIMEOUT from the layer that actually
       # waited rather than as a race between the two.
       LLM_GATEWAY_TIMEOUT_SECONDS: 75
+      # Which orchestrator runs /ask. "linear" is the straight line in
+      # routers/ask.py; "graph" is the LangGraph graph in app/graph/. Both
+      # call the same stages, so switching changes the route through the
+      # pipeline and nothing else - which is what makes an A/B eval
+      # meaningful. Set on the command line: PIPELINE=graph make restart
+      PIPELINE: ${PIPELINE:-linear}
+      # The two conditional branches only the graph can take. One at a
+      # time, each with its own eval run, or neither change is attributable.
+      GRAPH_WIDEN_ON_THIN_RETRIEVAL: ${GRAPH_WIDEN_ON_THIN_RETRIEVAL:-false}
+      GRAPH_RETRY_ON_FABRICATION: ${GRAPH_RETRY_ON_FABRICATION:-false}
+      # "*" so web/index.html works opened straight from disk - a file://
+      # page sends `Origin: null`, which no named origin matches. Local
+      # development only; a deployed service should name its real origin.
+      CORS_ALLOW_ORIGINS: "*"
     ports:
       - "8080:8080"
     depends_on:

@@ -348,7 +348,10 @@ questions:
     # tax_year is null, so the filter excludes neither Act and citing the
     # 2025 life-insurance provision alongside 80C is not an error.
     expected_acts: [DEPT-GUIDANCE, ITA-1961, ITA-2025]
-    expected_sections: ["80C"]
+    # tax_year is null, so neither Act is excluded and the 2025 equivalent
+    # of 80C answers the life-insurance half just as well. Expecting only
+    # 80C failed runs that cited s.123.
+    expected_sections: ["80C", "123"]
     should_refuse: false
     verify: true
     note: Spans guidance and statute in one answer.

@@ -59,19 +59,39 @@ def format_passage(index: int, passage: Passage) -> str:
     return f"{heading}\n{passage.text.strip()}"
 
 
-def build_prompt(question: str, passages: list[Passage]) -> str:
+def build_prompt(
+    question: str, passages: list[Passage], note: str | None = None
+) -> str:
+    """The provisions, the rules, and the question.
+
+    `note` is for a second attempt: it lands between the question and the
+    answer, which is the last thing the model reads and so the strongest
+    place to correct a specific mistake the first attempt made. Nothing
+    uses it on a first attempt, and the prompt is byte-identical without it.
+    """
     provisions = "\n\n".join(
         format_passage(i, p) for i, p in enumerate(passages, start=1)
     )
 
-    return f"{_SYSTEM.format(provisions=provisions)}\n\nQuestion: {question}\n\nAnswer:"
+    correction = f"\n\n{note.strip()}" if note else ""
+
+    return (
+        f"{_SYSTEM.format(provisions=provisions)}"
+        f"\n\nQuestion: {question}{correction}\n\nAnswer:"
+    )
 
 
 # Act codes end in a year (ITA-2025) or a word (DEPT-GUIDANCE), so the
 # second half cannot assume digits. The hyphen is required, which is why
 # the guidance label keeps one.
+#: "s.124" is asked for, but "section 124" identifies the same supplied
+#: provision just as unambiguously, and rejecting it turns a correct answer
+#: into an ungrounded one. SM-04 answered "covered under ITA-2025 section
+#: 124" across several runs and scored as a refusal every time.
 _CITATION = re.compile(
-    r"\b([A-Z][A-Z0-9]{1,5}-[A-Z0-9]{2,10})\s+s\.\s*([0-9A-Za-z][0-9A-Za-z\-]*)"
+    r"\b([A-Z][A-Z0-9]{1,5}-[A-Z0-9]{2,10})\s+"
+    r"(?:s\.\s*|sections?\s+)"
+    r"([0-9A-Za-z][0-9A-Za-z\-]*)"
 )
 
 

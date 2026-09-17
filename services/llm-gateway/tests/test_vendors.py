@@ -74,3 +74,20 @@ def test_reasoning_effort_is_omitted_when_empty():
     )
 
     assert "reasoning_effort" not in kwargs
+
+
+def test_gemini_keeps_max_tokens_despite_accepting_reasoning_effort():
+    """The two concerns are separate, and conflating them broke Gemini.
+
+    Sending max_completion_tokens to Gemini is accepted but behaves
+    differently: with a ceiling of 20 and 79 reasoning tokens, the model
+    spent the whole allowance thinking and returned no content.
+    """
+    kwargs = completion_kwargs(
+        vendor=resolve("gemini"),
+        model="gemini-3.7-flash",
+        max_tokens=1200,
+        reasoning_effort="low",
+    )
+
+    assert kwargs == {"max_tokens": 1200, "reasoning_effort": "low"}

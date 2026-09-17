@@ -86,48 +86,77 @@ Grounded Answer + Sources
 
 # Project Structure
 
+Two containerised services, one local-only corpus builder, and an evaluation
+harness that scores the whole thing. Every file's job in one line.
+
 ```text
 grounded_answer_engine/
 │
-├── .github/
-│   └── workflows/
-│       └── ci.yml
+├── docker-compose.yml          qdrant + llm-gateway + tax-agent, and the timeout ladder
+├── Makefile                    every command lives here; `make` lists them
 │
-├── app/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── dependencies.py
-│   ├── errors.py
-│   ├── logging_config.py
-│   ├── main.py
-│   ├── middleware.py
-│   ├── retry.py
-│   ├── schemas.py
-│   │
-│   ├── routers/
-│   │   ├── __init__.py
-│   │   ├── ask.py
-│   │   └── health.py
-│   │
-│   └── services/
-│       ├── __init__.py
-│       ├── base.py
-│       └── openai_compatible.py
+├── services/tax-agent/         RETRIEVAL AND GROUNDING - the interesting service
+│   └── app/
+│       ├── main.py             startup: picks an embedder and a store by name
+│       ├── config.py           every setting, with its default and its reason
+│       ├── prompt.py           the six rules, and the citation parser
+│       ├── scope.py            the refusal the pipeline cannot decide alone
+│       ├── tax_year.py         "FY 2026-27" -> 2026, which picks the Act
+│       ├── schemas.py          request and response shapes, incl. refusal_reason
+│       │
+│       ├── retrieval/          PLUGGABLE: swap either half by config
+│       │   ├── base.py           the two sockets - Embedder, VectorStore
+│       │   ├── embedders.py      OpenAI-compatible + the registry
+│       │   ├── stores.py         Qdrant, InMemory + the registry
+│       │   ├── sections.py       spotting "section 139" in a question
+│       │   └── retriever.py      the policy: exact-first, cap, truncate
+│       │
+│       ├── routers/
+│       │   ├── ask.py            retrieve -> prompt -> generate -> verify cites
+│       │   ├── search.py         retrieval only, no model, no cost
+│       │   └── health.py
+│       │
+│       └── services/
+│           ├── base.py           LLMGateway and Retriever protocols
+│           └── gateway_client.py talks to llm-gateway over HTTP
 │
-├── tests/
-│   ├── conftest.py
-│   ├── test_ask.py
-│   ├── test_errors.py
-│   ├── test_health.py
-│   ├── test_llm_client.py
-│   └── test_retry.py
+├── services/llm-gateway/       THE ONLY THING THAT TALKS TO A MODEL
+│   └── app/
+│       ├── vendors.py            PLUGGABLE: openai, gemini - and what each accepts
+│       ├── retry.py              exponential backoff with jitter
+│       └── services/
+│           └── openai_compatible.py  one client for every OpenAI-shaped API
 │
-├── .env.example
-├── .gitignore
-├── pyproject.toml
-├── requirements.txt
-└── README.md
+├── corpus-builder/             LOCAL ONLY - never runs in a container
+│   ├── corpus/
+│   │   ├── pdf.py                text out of the Act PDFs
+│   │   ├── dialects/             each Act numbers its sections differently
+│   │   ├── chunking.py           section-aware and naive strategies
+│   │   ├── guidance.py           the department's web pages, not statute
+│   │   ├── storage.py            SQLite, with UNIQUE(act, section_number)
+│   │   └── vectorstore.py        embedding and upload
+│   └── scripts/                  parse, index, search, export, manifest
+│
+├── eval/                       TURNING "IT WORKS" INTO A NUMBER
+│   ├── questions.yaml           40 questions and their ground truth
+│   ├── run.py                   asks each one, scores six signals
+│   ├── grade.py                 the human pass over answer_correct
+│   ├── compare.py               tells a real change from run-to-run noise
+│   └── PLAN.md                  what is measured, and why
+│
+└── data/                       gitignored except manifest.json
+    ├── raw/                     the source PDFs and scraped guidance
+    ├── corpus.db                parsed sections
+    └── manifest.json            source URLs and hashes, so a run is reproducible
 ```
+
+## Where to start reading
+
+1. `eval/PLAN.md` - what "good" means here, and why it is measured this way
+2. `services/tax-agent/app/routers/ask.py` - the whole request, top to bottom
+3. `services/tax-agent/app/retrieval/base.py` - the two sockets, and where the
+   boundary sits
+4. `services/tax-agent/app/prompt.py` - the rules the model is held to
 
 ---
 
@@ -342,6 +371,98 @@ curl -X POST http://127.0.0.1:8000/ask \
 | `max_tokens` | integer | No | 1–8000, default 2000 |
 
 Whitespace surrounding `question` is stripped during validation.
+
+---
+
+# POST `/ask/stream`
+
+Same question, same answer, but it tells you what it is doing while it works.
+Built for a UI: three seconds of silence feels much longer than three
+narrated ones.
+
+The transport is **Server-Sent Events** - a long-lived HTTP response with one
+`event:`/`data:` pair per update and a blank line between them. Simpler than
+a WebSocket because it only goes one way, which is all this needs.
+
+## Request
+
+Identical to `/ask`.
+
+```bash
+make ask-stream Q="which section charges interest for a late filed return?"
+```
+
+## What comes back
+
+One `status` frame per step, then exactly one `result` frame carrying the
+same body `/ask` returns - or one `error` frame.
+
+```text
+  0.00s  received       question_length=71
+  0.00s  year_resolved  tax_year=None source=none governing_act=None
+  0.00s  embedding      model=text-embedding-3-small
+  0.63s  embedded       dimensions=1536 took_ms=646
+  0.63s  searching      store=qdrant:ita_sections limit=24
+  0.64s  searched       candidates=24
+  0.64s  filtering      min_score=0.3 kept=24 dropped=0
+  0.64s  capping        max_per_section=2 before=24 after=6
+  0.64s  retrieved      count=6 acts=['ITA-1961', 'ITA-2025']
+            ITA-1961  s.234A  Interest for defaults in furnishing...  0.666
+            ITA-2025  s.423   Interest for defaults in furnishing...  0.604
+  0.64s  prompting      provisions=6 rules=6
+  0.64s  generating     prompt_characters=7676 max_tokens=1200
+  1.84s  generated      model=gpt-4.1-mini completion_tokens=42 took_ms=1204
+  1.84s  verified       cited=['ITA-1961 s.234A'] invented=[]
+  1.84s  ANSWER         refused=False reason=none
+```
+
+The timings are the useful part: embedding is a network call and costs about
+0.6s, the vector search is local and nearly free at 30ms, and the model is
+the rest. Optimising retrieval would buy almost nothing.
+
+## The steps
+
+| step | means |
+|---|---|
+| `received` | the question passed validation |
+| `resolving` / `year_resolved` | which tax year applies, where it came from, and which Act that puts in charge |
+| `embedding` / `embedded` | turning the question into a vector; a network call |
+| `searching` / `searched` | querying the vector store; how many candidates |
+| `filtering` | dropping candidates below the score floor |
+| `looking_up` / `looked_up` | the question named a section, so it is fetched exactly rather than by similarity |
+| `capping` | limiting how much of the window one section may occupy |
+| `retrieved` | the final set, with acts, sections, titles and scores |
+| `prompting` / `generating` / `generated` | the provisions go to the model; model, tokens and timing come back |
+| `verifying` / `verified` | every citation checked against what was supplied, split into `cited` and `invented` |
+| `refused` | stopping without an answer, with the reason and whether the model was called at all |
+
+Steps carry **facts, not sentences**. `retrieved` reports which sections were
+found, never "Found 6 provisions!" - wording belongs to the UI, and changing
+it should not mean changing this service. A client should ignore any step it
+does not recognise rather than display it raw.
+
+## What the stream deliberately does not do
+
+**It does not stream the answer text.** Citations can only be checked once
+the answer is complete, because a fabricated reference may be in the last
+sentence. Around two answers in forty try to cite a provision that was never
+supplied, so streaming the prose would mean showing a reader an invented
+section and retracting it afterwards.
+
+That trade also costs little here. The model spends most of its time before
+the first token, then writes ~104 words quickly, so word-by-word delivery
+would save about a second of a three-second request. The steps cover the
+whole wait.
+
+If token streaming is added later, the safe shape is to release a paragraph
+at a time once its citations check out - never to stream and correct.
+
+## Both endpoints are one implementation
+
+`/ask` and `/ask/stream` call the same `run_pipeline`. The plain endpoint
+passes a `Progress.discarded()` emitter, which accepts every step and keeps
+none, so there is no `if streaming:` branch anywhere and the two cannot
+drift. A test asserts the answer bodies match.
 
 ---
 

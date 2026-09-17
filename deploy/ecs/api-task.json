@@ -1,0 +1,90 @@
+{
+  "family": "api-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::268666185034:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "268666185034.dkr.ecr.ap-south-1.amazonaws.com/backend:v3",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "LLM_VENDOR",
+          "value": "openai"
+        },
+        {
+          "name": "ENVIRONMENT",
+          "value": "production"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "INFO"
+        },
+        {
+          "name": "REQUEST_TIMEOUT_SECONDS",
+          "value": "60"
+        },
+        {
+          "name": "MAX_RETRIES",
+          "value": "2"
+        },
+        {
+          "name": "RETRY_BASE_DELAY_SECONDS",
+          "value": "0.5"
+        },
+        {
+          "name": "RETRY_MAX_DELAY_SECONDS",
+          "value": "5.0"
+        },
+        {
+          "name": "MAX_RETRY_TIME_SECONDS",
+          "value": "60"
+        },
+        {
+          "name": "REASONING_EFFORT",
+          "value": "low"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "LLM_API_KEY",
+          "valueFrom": "arn:aws:ssm:ap-south-1:268666185034:parameter/gae/prod/llm-api-key"
+        }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "python -c \"import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://127.0.0.1:8000/health',timeout=3).status==200 else 1)\""
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 20
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/api-task",
+          "awslogs-create-group": "true",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
