@@ -1,0 +1,188 @@
+{
+  "family": "api-task",
+  "executionRoleArn": "arn:aws:iam::268666185034:role/ecsTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "268666185034.dkr.ecr.ap-south-1.amazonaws.com/backend:v4",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp",
+          "name": "api-8000-tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "LLM_VENDOR",
+          "value": "openai"
+        },
+        {
+          "name": "REQUEST_TIMEOUT_SECONDS",
+          "value": "60"
+        },
+        {
+          "name": "MAX_RETRIES",
+          "value": "2"
+        },
+        {
+          "name": "ENVIRONMENT",
+          "value": "production"
+        },
+        {
+          "name": "RETRY_MAX_DELAY_SECONDS",
+          "value": "5.0"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "INFO"
+        },
+        {
+          "name": "REASONING_EFFORT",
+          "value": "low"
+        },
+        {
+          "name": "RETRY_BASE_DELAY_SECONDS",
+          "value": "0.5"
+        },
+        {
+          "name": "MAX_RETRY_TIME_SECONDS",
+          "value": "60"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "LLM_API_KEY",
+          "valueFrom": "arn:aws:ssm:ap-south-1:268666185034:parameter/gae/prod/llm-api-key"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/api-task",
+          "awslogs-create-group": "true",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "gateway"
+        },
+        "secretOptions": []
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "wget -q -O- http://127.0.0.1:8000/health || exit 1"
+        ],
+        "interval": 10,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 15
+      },
+      "systemControls": []
+    },
+    {
+      "name": "agent",
+      "image": "268666185034.dkr.ecr.ap-south-1.amazonaws.com/tax-agent:v2",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp",
+          "name": "agent-8080-tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "CORS_ALLOW_ORIGINS",
+          "value": "*"
+        },
+        {
+          "name": "GRAPH_AGENT_ON_COMPARISON",
+          "value": "true"
+        },
+        {
+          "name": "LLM_GATEWAY_TIMEOUT_SECONDS",
+          "value": "75"
+        },
+        {
+          "name": "ENVIRONMENT",
+          "value": "production"
+        },
+        {
+          "name": "LLM_GATEWAY_URL",
+          "value": "http://localhost:8000"
+        },
+        {
+          "name": "VECTOR_STORE_PROVIDER",
+          "value": "qdrant_embedded"
+        },
+        {
+          "name": "CORPUS_DATE",
+          "value": "2026-09-14"
+        },
+        {
+          "name": "PIPELINE",
+          "value": "graph"
+        },
+        {
+          "name": "GRAPH_RETRY_ON_FABRICATION",
+          "value": "false"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "INFO"
+        },
+        {
+          "name": "QDRANT_PATH",
+          "value": "/app/data/index"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "EMBEDDING_API_KEY",
+          "valueFrom": "arn:aws:ssm:ap-south-1:268666185034:parameter/gae/prod/llm-api-key"
+        }
+      ],
+      "dependsOn": [
+        {
+          "containerName": "api",
+          "condition": "HEALTHY"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/api-task",
+          "awslogs-create-group": "true",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "agent"
+        },
+        "secretOptions": []
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "wget -q -O- http://127.0.0.1:8080/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 40
+      },
+      "systemControls": []
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024"
+}
