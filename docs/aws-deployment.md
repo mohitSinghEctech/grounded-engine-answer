@@ -2,19 +2,23 @@
 
 # Fargate Deployment Ledger
 
-Account 268666185034 (mohitSinghEctech) · Region ap-south-1 (Mumbai) · 12 September 2026
-Service: api-task (FARGATE) · Image: backend:v2 · Credits: $120.00 expiring 2027-09-11
+Account 268666185034 (mohitSinghEctech) · Region ap-south-1 (Mumbai) · 18 September 2026
+Service: api-task (FARGATE) · Task definition: api-task:11 · Credits: $120.00 expiring 2027-09-11
 
-A containerized FastAPI service (grounded_answer_engine) built, pushed to ECR, and run
-on ECS Fargate. Record of every resource created, what each bills, and the controls that
-hold the idle cost at half a cent a month.
+Three containers in one Fargate task: the LLM gateway, the tax-agent, and a Cloudflare
+tunnel connector. Record of every resource created, what each bills, and the controls
+that hold the idle cost at half a cent a month.
 
 ## Status
 
   Meter                 STOPPED (desired 0, running 0)
-  Idle cost             $0.005 / month   (ECR storage only)
-  Cost when running     $0.46 / day      (0.25 vCPU / 0.5 GB)
-  Spend to date         $0.00 of $10.00 budget
+  Idle cost             $0.01 / month    (ECR storage only, two repositories)
+  Cost when running     $0.74 / day      (0.5 vCPU / 1 GB + one public IPv4)
+                        $22.60 / month   if left running continuously
+  Spend to date         $0.0959 this month, fully offset by credits
+  Inbound ports         NONE. The tunnel dials outbound; nothing listens.
+
+  Reachable at          https://agent.avioratech.uk   (stable, survives restarts)
 
 ## What was built
 
@@ -66,9 +70,14 @@ That is what makes scale-to-zero genuinely zero.
     ECR storage, 50.69 MB ............ $0.005/mo   (the entire list - six cents a year)
 
   Dormant until a task starts:
-    Fargate compute .................. $0.34/day
+    Fargate compute .................. $0.62/day   (0.5 vCPU / 1 GB)
     Public IPv4 address .............. $0.12/day
     CloudWatch log ingest ............ within 5 GB free
+
+  Never bills:
+    Cloudflare Tunnel, DNS, WAF rule . free plan
+    Parameter Store (Standard) ....... free
+    ECS control plane, IAM ........... free
 
 ## Removed, and never built
 
@@ -208,10 +217,35 @@ the Budgets API is free, and so is the Cost Explorer console):
     aws budgets describe-budgets --account-id 268666185034 \
       --query 'Budgets[].{limit:BudgetLimit.Amount,spend:CalculatedSpend.ActualSpend.Amount}'
 
-## Rate card (ap-south-1 list prices)
+## Rate card
 
-  Fargate vCPU ......................... $0.04656 / hr
-  Fargate memory ....................... $0.00511 / GB-hr
+Derived from this account's own billed lines (Cost Explorer, RECORD_TYPE=Usage),
+not from the published list - the two differ, and only the first one bills you.
+
+  MEASURED on this account:
+  Fargate vCPU ......................... $0.042560 / hr      <- 69% of the bill
+  Fargate memory ....................... $0.004655 / GB-hr
+  Public IPv4 .......................... $0.005000 / hr
+  ECR storage .......................... $0.0998   / GB-month
+  Data transfer out .................... $0.0200   / GB
+
+  The task is 512 CPU / 1024 MB, so 730 hours costs:
+    vCPU    0.5 x 730 x 0.042560 ....... $15.53
+    memory  1.0 x 730 x 0.004655 ....... $ 3.40
+    IPv4        730 x 0.005000 ......... $ 3.65
+    ECR, requests, egress .............. $ 0.02
+                                         -------
+                                         $22.60 / month
+
+  The vCPU line is most of it, and the service spends nearly all its wall clock
+  WAITING on the model rather than computing - 2.6s of a 3.3s request. Dropping to
+  256 CPU / 512 MB would roughly halve the bill; the thing to test first is whether
+  the embedded Qdrant index still loads inside 512 MB.
+
+  LIST prices, for comparison and for what was avoided:
+  Application Load Balancer ............ $0.0225 / hr + LCU <- bills hourly regardless
+  NAT Gateway .......................... $0.045 / hr + data <- bills hourly regardless
+  EC2 t3.micro ......................... $0.0108 / hr       <- bills hourly regardless
   Public IPv4 .......................... $0.005 / hr        <- bills hourly regardless
   Application Load Balancer ............ $0.0225 / hr + LCU <- bills hourly regardless
   NAT Gateway .......................... $0.045 / hr + data <- bills hourly regardless
@@ -223,12 +257,54 @@ the Budgets API is free, and so is the Cost Explorer console):
   IAM, Parameter Store (standard) ...... free
   Data transfer out .................... 100 GB/month free
 
+## The Cloudflare tunnel
+
+Replaced "an unmemorable IP on a non-standard port" as the access control, and it is
+the single biggest security change in this ledger.
+
+  Tunnel name ........... tax-agent
+  Hostname .............. agent.avioratech.uk
+  Origin ................ http://127.0.0.1:8080
+  Connector ............. cloudflare/cloudflared:latest, third container in the task
+  Token ................. /tax-agent/cf-tunnel-token  (SSM SecureString)
+  Cost .................. $0
+
+How it works: cloudflared dials OUT to Cloudflare and holds the connection open.
+Requests arrive down a socket the task itself opened, so the task needs no inbound
+port - and the security group now has ZERO inbound rules. There is no address left
+to point a script at, which matters more than usual here because the agent branch
+can spend up to six model calls on one question.
+
+It also fixed a problem that had nothing to do with security: Fargate assigns a new
+public IP on every task restart, and the IP changed four times during one evening of
+deploys. The hostname does not change, so the web console's endpoint is set once.
+
+Four things that cost a round trip each, recorded so they don't again:
+
+  1. `localhost:8080` gives 502. cloudflared resolves localhost to ::1 and uvicorn
+     binds IPv4, so the connection is refused. Use `127.0.0.1:8080`.
+  2. The newer dashboard has ONE "Service URL" field and requires the scheme -
+     `http://127.0.0.1:8080`. The older UI had a separate Type dropdown and a bare
+     host:port.
+  3. `read-cf-tunnel-token` is the name of a POLICY, not a role. Created as a role
+     and set as the execution role, the task fails to start because that role cannot
+     read the gateway's API key: one execution role needs ALL the task's permissions.
+  4. `register-task-definition` rejects `taskRoleArn: null` and the read-only fields
+     `describe-task-definition` returns. Null is correct here - the task has an
+     execution role and no task role, because the containers make no AWS calls of
+     their own. Remove the key rather than fill it in.
+
+The connector has no log configuration, so a tunnel problem is currently diagnosed
+from symptoms rather than read. Worth fixing on the next revision.
+
 ## Open items
 
-1. POST /ask has no authentication or rate limit          BEFORE GOING PUBLIC
-   Every call spends Gemini quota. Today it's protected only by being an unmemorable IP
-   on a non-standard port, and by the service being stopped. An API-key check in
-   middleware is the minimum before attaching a domain name.
+1. POST /ask has no authentication                        STILL OPEN
+   Every call spends OpenAI quota, and the agent branch spends up to six calls on one
+   question. Protection today is structural rather than logical: no inbound port, plus
+   a Cloudflare WAF rate limit. That is enough while the hostname is unpublished, and
+   not enough once it is shared - the console should send a Firebase ID token and the
+   agent should verify it.
 
 2. The CLI key is scoped now, but still never expires      PARTLY DONE
    Permissions are down from AdministratorAccess to GaeCliAccess (v2), so a leak costs

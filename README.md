@@ -144,6 +144,59 @@ prompt changes shipped together and only one of them was worth keeping.
 
 ---
 
+## Running it in production
+
+Two containers plus a tunnel connector in one AWS Fargate task, reachable over
+HTTPS at a stable hostname, and **scaled to zero by default**.
+
+```bash
+make ecs-start      # ~60 seconds to running; the tunnel reconnects itself
+make ecs-stop       # back to ~$0/day
+```
+
+```
+task api-task:11  ·  512 CPU / 1024 MB  ·  ap-south-1
+├── api      backend:v4      the LLM gateway, :8000
+├── agent    tax-agent:v2    retrieval + grounding, :8080
+└── tunnel   cloudflared     outbound only, no port
+```
+
+**There are no inbound ports.** `cloudflared` dials out to Cloudflare and holds
+the connection open, so requests arrive down a socket the task itself opened.
+The security group has zero inbound rules, which means there is no address to
+point a script at — and that matters here because the agent branch can spend
+up to six model calls on a single question.
+
+It also solved a smaller problem: Fargate assigns a new public IP on every
+restart (it changed four times during one evening of deploys), and the
+hostname doesn't. The web console's endpoint is set once and never touched.
+
+### What it costs
+
+| | Running 24/7 | Note |
+|---|---|---|
+| Fargate vCPU (0.5) | **$15.53** | 69% of the bill |
+| Public IPv4 | $3.65 | unavoidable; the alternative is a $32/mo NAT gateway |
+| Fargate memory (1 GB) | $3.40 | |
+| ECR, requests, egress | $0.02 | |
+| Cloudflare tunnel, DNS, WAF | $0 | free plan |
+| Firebase Hosting + Auth (console) | $0 | free plan |
+| **AWS total** | **≈ $22.60 / month** | ≈ ₹1,990 |
+
+Rates are this account's own billed lines, not published list prices. Model
+usage is the small part: ~3,000 tokens per pipeline question and ~11,700 for
+an agent question, so a 40-question eval run costs about **$0.06** and a
+thousand questions about **$1.50** — roughly 7% of the bill against 93% for
+the container.
+
+Nearly all of a request is spent *waiting* on the model — 2.6s of 3.3s — so
+the vCPU line buys very little. 256 CPU / 512 MB would roughly halve the cost;
+the open question is whether the embedded index still loads in 512 MB.
+
+`docs/aws-deployment.md` is the full ledger: every resource, what each bills,
+the seven cost guards, the incidents, and the four tunnel gotchas worth not
+repeating.
+
 ## Architecture
 
 The current request flow is:
