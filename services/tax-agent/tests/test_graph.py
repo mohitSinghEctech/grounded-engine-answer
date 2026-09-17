@@ -547,7 +547,7 @@ async def test_cannot_answer_becomes_a_declared_not_in_corpus_refusal():
     )
 
     response = await run_graph_pipeline(
-        AskRequest(question="How did crypto rules change between the Acts?"),
+        AskRequest(question="What changed for crypto between the 1961 and 2025 Acts?"),
         ScriptedRetriever([]),
         gateway,
         make_settings(graph_agent_on_comparison=True),

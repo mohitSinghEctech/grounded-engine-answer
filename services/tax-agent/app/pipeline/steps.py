@@ -203,6 +203,8 @@ CROSS_ACT = (
     "equivalent",
     "counterpart",
     "renumbered",
+    # "changed", not "change": the bare word is a substring of
+    # "exchange", and "foreign exchange" appears throughout a tax corpus.
     "changed",
     "difference",
     "differences",
