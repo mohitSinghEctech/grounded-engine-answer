@@ -47,19 +47,21 @@ hand, because an LLM judge would substitute its own error rate for the one being
 measured. Not-applicable cells are held as `None` rather than `False`, so a rate
 cannot be inflated by questions the signal does not apply to.
 
-| Signal | Baseline | Current | What it asks |
-|---|---|---|---|
-| `retrieval_hit` | 86% | **89–93%** | did the expected provision reach the model |
-| `act_correct` | 85% | **97%** | was the right Act cited for the year in question |
-| `refused_correctly` | 72% | **90–95%** | did it refuse exactly when it should |
-| `grounded` | 74% | **91–94%** | every claim traceable to a supplied provision |
-| `contains_expected` | 83% | **80–100%** | the expected figure or phrase appears |
-| `no_fabrication` | n/a | **95–98%** | no citation to a provision never supplied |
-| `answer_correct` | — | **34/40 (85%)** | hand-graded against the corpus |
+| Signal | Baseline | Pipeline | Agent branch on | What it asks |
+|---|---|---|---|---|
+| `retrieval_hit` | 86% | 93% | **100%** | did the expected provision reach the model |
+| `act_correct` | 85% | 96% | 95% | was the right Act cited for the year in question |
+| `refused_correctly` | 72% | 93% | **98%** | did it refuse exactly when it should |
+| `grounded` | 74% | 94% | **100%** | every claim traceable to a supplied provision |
+| `contains_expected` | 83% | 93% | 87% | the expected figure or phrase appears |
+| `no_fabrication` | n/a | 96% | 97% | no citation to a provision never supplied |
+| `answer_correct` | — | 34/40 (85%) | not re-graded | hand-graded against the corpus |
 
-Baseline is a single run; current is a range across three. `no_fabrication` was
-added after the baseline, so there is no before-figure — the honest answer is
-that fabrication was not being counted at all until it was.
+Baseline is a single run; the other two columns are medians of three. Bold
+figures are the ones `compare.py` calls REAL — the ranges do not overlap.
+`no_fabrication` was added after the baseline, so there is no before-figure:
+the honest answer is that fabrication was not being counted at all until it
+was.
 
 `answer_correct` was hand-graded once, at the Tier 0 stage
 (`eval/runs/tier0.csv`), and **has not been re-graded since**. It is the least
@@ -80,15 +82,29 @@ python eval/compare.py --label before eval/runs/a-r*.csv \
                        --label after  eval/runs/b-r*.csv
 ```
 
+### What three measured changes did
+
+Nine runs — three configurations, three runs each, one behaviour change per
+group (`eval/measure-all.sh`).
+
+| Change | Verdict |
+|---|---|
+| **Pipeline rewritten as a LangGraph graph** | **parity.** Every signal within noise, which is what a change to orchestration alone should score. The graph was also steadier: `retrieval_hit` and `grounded` came back identical across all three runs where the linear path varied. |
+| **Retry when a citation is fabricated** | **no effect — and the rule is wrong.** The branch only fires when *every* citation is invented, and every real fabrication here is a *mixed* answer: three or four correct citations plus one invented. It fired on zero of forty questions. Retrying on any nameable fabrication is the version worth measuring. |
+| **Agent branch on cross-Act questions** | **+7% `retrieval_hit`, +6% `grounded`, +5% `refused_correctly`, all REAL.** SM-01 and SM-02 stopped failing. |
+
+The second row is the honest one: the measurement found a design flaw that
+three passing unit tests and a working live demo had not.
+
 ### What still fails
 
-Three questions fail in **every** run. These are the ones worth engineering
-against; everything else flickers.
+Two questions failed **every** run before the agent branch; one still does.
+These are the ones worth engineering against — everything else flickers.
 
 | ID | Question | Fails | Cause |
 |---|---|---|---|
-| **SM-01** | "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?" | `retrieval_hit`, `grounded`, `refused_correctly` | **corpus gap, not retrieval.** `maps_to_1961` is populated for 4 of 552 sections, so the cross-Act mapping the question asks for is not in the index. The model correctly refuses rather than guessing a number. |
-| **SM-02** | "Which provision of the 2025 Act replaces section 80D?" | same | same gap |
+| **SM-01** | "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?" | fixed on the agent branch, ~70–75% of the time | **corpus gap, not retrieval.** `maps_to_1961` is populated for 4 of 552 sections, so the mapping is not in the index. On the pipeline the model correctly refuses. On the agent branch it calls `map_section`, gets nothing, and searches the 2025 Act by subject instead — finding s.123. Eight live samples found it in six and declared `cannot_answer` in two, so **not deterministic**, and when it fails it fails after trying. |
+| **SM-02** | "Which provision of the 2025 Act replaces section 80D?" | same, finds s.126 | same gap, same recovery |
 | **PR-06** | "Which return form applies to a company?" | `act_correct`, `no_fabrication` | **a reproducible fabrication.** The departmental guidance pages are chunked as `company-ay1` and `company-ay2`; the model cites both, then extrapolates a third — `DEPT-GUIDANCE s.company-ay3` — which does not exist. Identical in all three runs, so this is the corpus's naming pattern inviting extrapolation, not sampling noise. |
 
 Three more fail intermittently and are treated as noise until they repeat:
@@ -106,8 +122,13 @@ OC-05 (2 of 3 runs), PR-03 and YS-04 (1 of 3 each).
   What is known is where it breaks first: one section flooding the context
   window, and exact lookup that similarity cannot do.
 - **`answer_correct` is stale**, as above.
-- **The cross-Act mapping is 4 of 552.** Populating it by matching section
-  titles across Acts would close SM-01 and SM-02.
+- **The cross-Act mapping is 4 of 552.** The agent branch works around it by
+  searching the other Act by subject, at ~70–75% reliability. Populating the
+  mapping by matching section titles would make it deterministic.
+- **The agent path costs where it fires**, and only there: those four questions
+  went from 2.1s to 6.9s median and about three model calls each, while the
+  whole-run token total moved 354k → 365k (+3%). That is the argument for
+  keeping the router narrow rather than sending everything through an agent.
 
 ### Reproducing this
 
