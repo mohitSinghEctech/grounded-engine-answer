@@ -6,10 +6,22 @@
 # what these changes have to improve on. Comparing against anything older
 # would credit these fixes with the agent branch's win.
 #
-# g4 holds the code still and changes only the CORPUS - guidance pages
-# re-labelled away from an extrapolable sequence, and maps_to_1961 filled
-# for 319 of 552 sections instead of 4. Both reached the index through
-# `make reindex`, so g4 against g3-agent isolates them.
+# g4 is ONE FEATURE, not one change, and that is deliberate: "the agent
+# can answer a cross-Act mapping question with citations" needs all of
+#
+#   - the guidance pages re-labelled away from an extrapolable sequence
+#   - the cross-Act mapping filled, in BOTH directions
+#   - the agent told to get_section the counterpart before citing it
+#
+# Measuring any of them alone measures a half-built feature. With only the
+# mapping, SM-01 came back "Section 80C corresponds to Section 123" - the
+# right answer, cited in prose, scored as a refusal. So the honest unit
+# here is the feature, and the cost is that a move in these numbers cannot
+# be split between the corpus and the prompt.
+#
+# The guidance re-label rides along because it is corpus-wide and cannot be
+# isolated without a third index. It targets PR-*, which the mapping does
+# not touch, so the two are at least readable apart by question.
 #
 # g5 then adds the corrected retry rule on top of g4. One change per
 # group, which is the rule the NOT_IN_CORPUS attempt paid to learn.

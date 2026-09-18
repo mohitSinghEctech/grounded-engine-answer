@@ -128,40 +128,104 @@ These are the ones worth engineering against — everything else flickers.
 Three more fail intermittently and are treated as noise until they repeat:
 OC-05 (2 of 3 runs), PR-03 and YS-04 (1 of 3 each).
 
-### Changed since the last measurement
+### What the second six runs measured
 
-Every figure above predates these four changes. They are listed separately
-rather than folded into the tables, because a change is not a result until it
-has been through three runs:
+Two more groups of three (`eval/measure-fixes.sh`), against `g3-agent` as the
+baseline — the best configuration measured so far, so a change has to beat the
+agent branch rather than the linear pipeline.
 
-| Change | What it targets | Why it should help |
-|---|---|---|
-| Guidance ids re-labelled `company-domestic` / `individual-salaried` | PR-06's reproducible fabrication | 7 of the 12 fabrications observed were the *next number in a shown sequence*. `-ay1`/`-ay2` in the prompt invite `-ay3`; names with no ordinal have nothing to extrapolate. (The old ids were also simply wrong: they were taxpayer categories, not assessment years.) |
-| Cross-Act mapping filled **in both directions** — 319 forward (2025→1961) and 306 reverse (1961→2025) | SM-01, SM-02, SM-03, SM-05 | The mapping the question asks for is now in the index *and traversable the way it is asked*, so the agent can answer by mapping rather than by searching until the right section surfaces. |
-| Retry fires on any nameable fabrication, not only an all-invented answer | the retry branch's 0-of-40 firing rate | The rule as written could not fire on the failure shape that actually occurs. |
-| Trajectory scoring (`agent_used`, `path_correct`, `no_redundant_calls`) | the measurement itself | Distinguishes a right answer reached the right way from a right answer reached by luck — and would have caught the router that matched none of its own four questions. |
+**g4 bundles three changes, and that is deliberate.** "The agent can answer a
+cross-Act mapping question with citations" needs the guidance re-label, the
+bidirectional mapping *and* the prompt that tells the agent to fetch the
+counterpart before citing it. Measured separately, the first two produce a
+half-built feature: with the mapping alone, SM-01 answered *"Section 80C
+corresponds to Section 123"* — right answer, cited in prose, scored as a
+refusal. The cost of bundling is that a move cannot be split between the
+corpus and the prompt; it can still be split by question, since the re-label
+targets PR-\* and the mapping targets SM-\*.
 
-**The reverse mapping is worth its own note, because the first version of that
-fix did nothing.** `maps_to_1961` was filled for 319 sections and the smoke
-test still came back `found=false` on SM-01. The mapping is recorded on the
-*2025* section — 2025 s.123 points at 1961 s.80C — and every section-mapping
-question starts from the 1961 side and asks for the 2025 counterpart. So
-`map_section("80C")` looked up a 1961 row where nothing had been written, the
-agent fell back to searching, found s.123 anyway, and cited it in prose the
-citation check does not recognise: **a refusal on a question it had answered
-correctly.** The tool's own description said "Given a section of the 2025 Act",
-and its only test went 2025→1961, so nothing objected.
+| Signal | g3-agent | g4 (corpus + mapping + prompt) | g5 (+ corrected retry) |
+|---|---|---|---|
+| `retrieval_hit` | 100% | 99% | 100% |
+| `act_correct` | 95% | **97%** (see below) | **97%** (see below) |
+| `refused_correctly` | 98% | 98% | 97% |
+| `grounded` | 100% | 98% | 99% |
+| `no_fabrication` | 97% | 98% | **100%, stable** |
+| `agent_used` | — | 4/4 stable | 4/4 stable |
+| `path_correct` | — | 4/4 stable | 4/4 stable |
+| `no_redundant_calls` | — | 4/4 stable | 4/4 stable |
 
-The fix is a second column (`maps_to_2025` on the 1961 rows, the inverse), one
-neutral `maps_to` key in the payload, and a tool that reads the target Act off
-the section it found instead of hardcoding `ITA-1961`. Ambiguity is preserved
-rather than guessed: 6 sections of the 1961 Act are claimed by two 2025
-sections each and are left null.
+**Not one output signal moved REAL, and the reason is headroom.** `g3-agent`
+was already at 100% `retrieval_hit` and 100% `grounded`. There was nothing left
+to win on the signals that matter most, so a fix aimed at *how* the answer is
+reached could not show up in *whether* it was reached.
 
-The first two need a re-index before they reach the Qdrant payload
-(`make index-standalone`, needs `EMBEDDING_API_KEY`); all four then need a
-fresh group of three runs. `answer_correct` is also still the Tier 0 grading
-and needs a `make grade` pass.
+That mechanism is what the trajectory signals were added for, and they show it:
+across all six runs the four mapping questions called
+`map_section → get_section → get_section`, **4/4 stable**, where before they
+reached the same answers by searching until the right section surfaced. SM-01
+went from roughly 70–75% on live sampling to 6 of 6 runs on the intended path —
+better, but six runs is not proof of determinism.
+
+**`act_correct` was the one REAL move, and it was the eval set's fault.** It
+read −2%, entirely from SM-02 failing 3/3 because the agent now cites
+`ITA-1961 s.80D` *and* `ITA-2025 s.126`. SM-01, SM-03 and SM-05 all already
+declare both Acts, SM-03's comment explains why ("the question names 80GG, so
+citing it is right"), and SM-02 was simply missed. Corrected — after seeing it
+fail, which is worth stating plainly; the justification is consistency with
+three sibling questions, not the result — both groups score **97% against
+g3's 95%**, within noise but pointing the other way.
+
+**The guidance re-label worked, narrowly.** PR-06's `DEPT-GUIDANCE
+s.company-ay3` — the reproducible fabrication documented above — is gone in
+6 of 6 runs. Corpus-wide fabrication did not improve, because the re-label
+**moved** it rather than removing it. Two new shapes appeared:
+
+    DEPT-GUIDANCE s.individual-salaried-other-sources   a real page name,
+                                                        with a plausible
+                                                        suffix appended
+    ITA-2025 s.individual-salaried                      a guidance page id
+                                                        under an Act code
+
+So the lesson from the first nine runs holds in a sharper form: the model does
+not extrapolate *numbers*, it extrapolates *patterns*. Removing the ordinal
+removed one pattern and left the naming convention itself as another.
+
+**The corrected retry rule fires, and it trades fabrications for refusals.**
+`no_fabrication` went to 40/40 in all three g5 runs, against 95–100% in g4 —
+every fabrication observed was eliminated. `compare.py` still calls it *within
+noise*, correctly: the ranges overlap, and three runs cannot separate 98% from
+100%. The cost showed up too — on one run PR-03 came back
+`REFUSE: OUT_OF_SCOPE` with no citations, a fabrication converted into a wrong
+refusal, which is the exact risk `test_mixed_answer_stands_when_the_retry_does_not_fix_it`
+pins down. Tokens and latency were flat (≈119.7k against 119.9k per run),
+because the branch fires rarely.
+
+It is **off by default**, on the project's own standard: it did not reach REAL,
+and it has a demonstrated failure mode. Turning it on is a one-line flag and a
+defensible judgement — a refusal is honest where a fabricated citation is
+dangerous — but it is a judgement, not a measurement.
+
+### Shipped defaults
+
+`PIPELINE=graph` and `GRAPH_AGENT_ON_COMPARISON=true` are now the defaults: the
+graph reached parity across three runs and is steadier, and the agent branch
+earned +7% `retrieval_hit` / +6% `grounded` / +5% `refused_correctly`, all REAL,
+at +3% tokens on 4 of 40 questions. `GRAPH_WIDEN_ON_THIN_RETRIEVAL` and
+`GRAPH_RETRY_ON_FABRICATION` stay off — the first has never been measured, the
+second is described above.
+
+### Still not done
+
+- **`answer_correct` is still the Tier 0 grading** (34/40), from before any of
+  this. It is the least current number in this file and needs a `make grade`
+  pass.
+- **OC-05 fails every run** in g5 and 1–2 of 3 elsewhere — the only question
+  that now fails consistently.
+- **PR-06 still fails `act_correct`** 6/6, citing `ITA-1961 s.139` alongside
+  the two guidance pages. Whether that is wrong is a judgement about the
+  question, not a bug.
+- The `ita_naive` A/B has still never run.
 
 ### Known limitations
 

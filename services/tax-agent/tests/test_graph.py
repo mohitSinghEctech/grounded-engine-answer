@@ -519,12 +519,41 @@ def tool_reply(name, arguments, call_id="c1"):
 
 
 @sync
-async def test_the_agent_is_off_by_default():
-    """A behaviour change has to earn its place in its own eval run."""
-    gateway = ScriptedGateway("Premium (ITA-1961 s.80D).")
+async def test_the_agent_is_on_by_default_now_that_it_has_earned_it():
+    """It had to earn its place in its own eval run, and it did.
+
+    +7% retrieval_hit, +6% grounded, +5% refused_correctly, all REAL, for
+    +3% tokens across the run. This test asserted the opposite until that
+    measurement existed, which was the right default to hold beforehand.
+    """
+    gateway = ScriptedGateway(
+        tool_reply("search_provisions", {"query": "salary income"}),
+        "Salary is charged under (ITA-1961 s.80D).",
+    )
 
     response = await run_graph_pipeline(
         AskRequest(question="What changed for salary income between the Acts?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(),
+    )
+
+    assert gateway.conversations != []
+    assert response.tools_called == ["search_provisions"]
+    assert response.agent_steps == 2
+
+
+@sync
+async def test_a_one_hop_question_stays_off_the_agent_path_by_default():
+    """The flag being on does not make everything an agent.
+
+    The routing is what keeps the cost narrow: agency runs ~3x the tokens
+    on the questions it fires for, and it is worth that on 4 of 40.
+    """
+    gateway = ScriptedGateway("Premium (ITA-1961 s.80D).")
+
+    response = await run_graph_pipeline(
+        AskRequest(question="What is the deduction limit under section 80D?"),
         ScriptedRetriever([passage()]),
         gateway,
         make_settings(),

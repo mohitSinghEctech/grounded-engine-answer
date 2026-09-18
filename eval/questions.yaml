@@ -195,7 +195,16 @@ questions:
     category: section-mapping
     question: "Which provision of the 2025 Act replaces section 80D on health insurance premium?"
     tax_year: null
-    expected_acts: [ITA-2025]
+    # As SM-03 and SM-05: the question names 80D, so citing it is right.
+    # ITA-1961 was missing here while its three siblings all had it, and
+    # the gap only showed once the agent started fetching BOTH sections
+    # before citing - correct behaviour, scored as a wrong-Act error 3/3.
+    #
+    # Changed after seeing it fail, which is worth stating plainly. The
+    # justification is consistency, not the result: SM-01, SM-03 and SM-05
+    # already encode "the section named in the question may be cited",
+    # SM-03's comment says why, and this question is the same shape.
+    expected_acts: [ITA-2025, ITA-1961]
     expected_sections: ["126"]
     # Two hops, and the second cannot be formed until the first returns:
     # map_section gives back a NUMBER only, so the text has to be fetched
