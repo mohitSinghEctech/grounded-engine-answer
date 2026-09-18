@@ -1,0 +1,1765 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Income-tax Answer Console</title>
+<style>
+/* ------------------------------------------------------------------ *
+ * Tokens. Light is the base; dark redefines only the values, and the
+ * [data-theme] stamps let an explicit choice win in either direction.
+ * ------------------------------------------------------------------ */
+:root {
+  --ground:      #e7e9e3;
+  --surface:     #f6f7f4;
+  --surface-sunk:#dfe2db;
+  --ink:         #15191a;
+  --ink-soft:    #565e5a;
+  --ink-faint:   #7d857f;
+  --rule:        #c9cec5;
+  --rule-soft:   #d8dcd3;
+  --accent:      #13544b;
+  --accent-soft: #dbe7e2;
+  --accent-ink:  #0e4740;
+  --on-accent:   #f6f7f4;
+  --oxblood:     #8c2e23;
+  --oxblood-soft:#f2dfdb;
+  --amber:       #7d5a0c;
+  --amber-soft:  #f0e6cd;
+  --good:        #2b6242;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --shadow: 0 1px 0 rgba(21, 25, 26, .04), 0 1px 3px rgba(21, 25, 26, .05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0f1312;
+    --surface:     #171c1b;
+    --surface-sunk:#0b0e0e;
+    --ink:         #e3e8e3;
+    --ink-soft:    #9ba59f;
+    --ink-faint:   #77817b;
+    --rule:        #2b3331;
+    --rule-soft:   #222927;
+    --accent:      #62c5b0;
+    --accent-soft: #14302c;
+    --accent-ink:  #8fd8c7;
+    --on-accent:   #0b0e0e;
+    --oxblood:     #ea8172;
+    --oxblood-soft:#331915;
+    --amber:       #d5a541;
+    --amber-soft:  #2e2513;
+    --good:        #6cbd8e;
+    --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 1px 4px rgba(0, 0, 0, .35);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:      #0f1312;
+  --surface:     #171c1b;
+  --surface-sunk:#0b0e0e;
+  --ink:         #e3e8e3;
+  --ink-soft:    #9ba59f;
+  --ink-faint:   #77817b;
+  --rule:        #2b3331;
+  --rule-soft:   #222927;
+  --accent:      #62c5b0;
+  --accent-soft: #14302c;
+  --accent-ink:  #8fd8c7;
+  --on-accent:   #0b0e0e;
+  --oxblood:     #ea8172;
+  --oxblood-soft:#331915;
+  --amber:       #d5a541;
+  --amber-soft:  #2e2513;
+  --good:        #6cbd8e;
+  --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 1px 4px rgba(0, 0, 0, .35);
+}
+
+/* ------------------------------------------------------------------ */
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding-inline: 20px;
+  padding-block: 0 72px;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.shell { max-width: 66rem; margin-inline: auto; }
+
+/* --- shared atoms ------------------------------------------------- */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.num { font-variant-numeric: tabular-nums; }
+
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- masthead ----------------------------------------------------- */
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 28px;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-block: 26px 14px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.masthead h1 {
+  font-family: var(--serif);
+  font-size: clamp(25px, 4.4vw, 35px);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -.012em;
+}
+
+.masthead .seal {
+  display: inline-block;
+  margin-right: .45em;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: .62em;
+  font-weight: 700;
+  letter-spacing: .04em;
+  vertical-align: .18em;
+}
+
+/* endpoint rail: unobtrusive, always reachable */
+.rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.rail label { color: var(--ink-faint); letter-spacing: .04em; text-transform: uppercase; font-size: 10.5px; }
+
+#endpoint {
+  width: 15.5rem;
+  max-width: 100%;
+  padding: 5px 8px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.mini {
+  padding: 5px 9px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.mini:hover { border-color: var(--ink-soft); color: var(--ink); }
+
+.health {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+}
+
+.health .lamp {
+  width: 8px; height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  box-shadow: 0 0 0 3px var(--rule-soft);
+}
+.health[data-state="ok"]      .lamp { background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }
+.health[data-state="down"]    .lamp { background: var(--oxblood); box-shadow: 0 0 0 3px color-mix(in srgb, var(--oxblood) 22%, transparent); }
+.health[data-state="probing"] .lamp { background: var(--amber); animation: pulse 1.1s ease-in-out infinite; }
+.health[data-state="ok"]   { color: var(--ink-soft); }
+.health[data-state="down"] { color: var(--oxblood); }
+
+@keyframes pulse { 50% { opacity: .3; } }
+
+/* --- standfirst --------------------------------------------------- */
+.standfirst {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 10px 40px;
+  padding-block: 22px 26px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.standfirst > p {
+  margin: 0;
+  max-width: 34em;
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.claims { margin: 0; display: grid; gap: 9px; align-content: start; }
+.claims div { font-size: 13.5px; color: var(--ink-soft); }
+.claims dt {
+  display: inline;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.claims dd { display: inline; margin: 0; }
+.claims dt::after { content: " — "; color: var(--ink-faint); letter-spacing: 0; }
+
+/* --- ask docket --------------------------------------------------- */
+.docket {
+  margin-block: 26px;
+  padding: 18px 18px 16px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.docket-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+.docket-head .hint { font-size: 11.5px; color: var(--ink-faint); font-family: var(--mono); }
+
+#question {
+  width: 100%;
+  min-height: 5.1em;
+  padding: 11px 12px;
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.45;
+  resize: vertical;
+}
+#question::placeholder { color: var(--ink-faint); font-style: italic; }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+  margin-top: 13px;
+}
+
+.field { display: grid; gap: 4px; }
+.field > span {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.field select, .field input {
+  padding: 7px 8px;
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-size: 13px;
+}
+#taxYear { max-width: 15rem; }
+#maxTokens { width: 6.5rem; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.grow { flex: 1 1 4rem; min-width: 0; }
+
+.primary {
+  padding: 9px 20px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  color: var(--on-accent);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  cursor: pointer;
+}
+.primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); }
+.primary[disabled] { opacity: .45; cursor: default; }
+
+.ghost {
+  padding: 9px 14px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  cursor: pointer;
+}
+.ghost:hover { border-color: var(--oxblood); color: var(--oxblood); }
+.ghost[hidden] { display: none; }
+
+/* --- examples ----------------------------------------------------- */
+.samples { margin-block: 30px 34px; }
+
+.samples-grid {
+  display: grid;
+  /* two up, so four examples fill the grid instead of leaving dead cells */
+  grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
+  gap: 1px;
+  margin-top: 12px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+
+.sample {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px;
+  background: var(--surface);
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.sample:hover { background: var(--accent-soft); }
+.sample b {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.sample span {
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.38;
+  color: var(--ink);
+}
+.sample i {
+  font-size: 12px;
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+/* --- pipeline map (at rest) --------------------------------------- */
+.map { margin-block: 30px; padding-block: 22px 0; border-top: 1px solid var(--rule); }
+.map p { margin: 8px 0 0; max-width: 46em; font-size: 13.5px; color: var(--ink-soft); }
+
+.map-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 0;
+  margin-top: 14px;
+  padding: 0;
+  list-style: none;
+}
+.map-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+.map-steps li::after {
+  content: "";
+  width: 10px;
+  height: 1px;
+  background: var(--rule);
+}
+.map-steps li:last-child::after { display: none; }
+.map-steps li[data-conditional] { color: var(--ink-faint); }
+.map-steps li[data-conditional] u { text-decoration: none; border-bottom: 1px dotted var(--ink-faint); }
+
+/* --- run: trace --------------------------------------------------- */
+#run[hidden] { display: none; }
+
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--ink);
+}
+.section-head h2 {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+}
+.section-head .meta { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+
+.asked {
+  margin: 0;
+  padding: 14px 0 0;
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.4;
+}
+.asked::before {
+  content: "Q";
+  margin-right: .5em;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .1em;
+  color: var(--ink-faint);
+  vertical-align: .22em;
+}
+
+.trace { margin-block: 20px 0; }
+
+.log { margin: 14px 0 0; padding: 0; list-style: none; }
+
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 3.9rem 1fr;
+  gap: 0 14px;
+  padding: 7px 0;
+}
+/* the spine: one hairline down the marker column */
+.step::before {
+  content: "";
+  position: absolute;
+  left: calc(3.9rem + 15px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--rule);
+}
+.step:first-child::before { top: 18px; }
+.step:last-child::before  { bottom: auto; height: 18px; }
+
+.step .at {
+  padding-top: 2px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink-faint);
+}
+
+.step .body { position: relative; padding-left: 13px; min-width: 0; }
+.step .body::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 6px;
+  width: 7px; height: 7px;
+  background: var(--ground);
+  border: 1px solid var(--ink-faint);
+  border-radius: 1px;
+}
+.step[data-done="true"] .body::before { background: var(--accent); border-color: var(--accent); }
+.step[data-active="true"] .body::before {
+  background: var(--amber);
+  border-color: var(--amber);
+  animation: pulse 1s ease-in-out infinite;
+}
+.step[data-tone="bad"]  .body::before { background: var(--oxblood); border-color: var(--oxblood); }
+.step[data-tone="warn"] .body::before { background: var(--amber);  border-color: var(--amber); }
+
+.step .name {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.step[data-tone="bad"]  .name { color: var(--oxblood); }
+.step .said { font-size: 14.5px; color: var(--ink); }
+.step[data-tone="bad"] .said { color: var(--oxblood); font-weight: 600; }
+.step[data-tone="unknown"] .said { color: var(--ink-faint); font-style: italic; }
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 14px;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+.facts b { font-weight: 400; color: var(--ink-faint); }
+.facts b::after { content: " "; }
+.facts .v { font-variant-numeric: tabular-nums; }
+.facts .bad  { color: var(--oxblood); font-weight: 600; }
+.facts .good { color: var(--good); }
+
+/* provisions found, inside the retrieved step */
+.provisions {
+  margin-top: 10px;
+  overflow-x: auto;
+  border: 1px solid var(--rule-soft);
+}
+.provisions table {
+  width: 100%;
+  min-width: 30rem;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.provisions th {
+  padding: 6px 10px;
+  background: var(--surface-sunk);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.provisions td {
+  padding: 6px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+.provisions tr:last-child td { border-bottom: 0; }
+.provisions .act, .provisions .sec {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.provisions .sec { color: var(--accent); font-weight: 600; }
+.provisions .ttl { color: var(--ink); }
+.provisions .sco { width: 6.5rem; }
+
+.bar {
+  position: relative;
+  height: 14px;
+  background: var(--surface-sunk);
+}
+.bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+.bar em {
+  position: relative;
+  display: block;
+  padding-left: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  color: var(--ink-soft);
+}
+
+/* --- alerts ------------------------------------------------------- */
+.alarm {
+  margin-block: 26px;
+  padding: 16px 18px;
+  background: var(--oxblood-soft);
+  border: 1px solid var(--oxblood);
+  border-left: 5px solid var(--oxblood);
+}
+.alarm h3 {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--oxblood);
+}
+.alarm p { margin: 7px 0 0; font-size: 14px; color: var(--ink); max-width: 44em; }
+.alarm ul { margin: 10px 0 0; padding-left: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.alarm li {
+  padding: 3px 9px;
+  background: var(--surface);
+  border: 1px solid var(--oxblood);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--oxblood);
+}
+
+.wire {
+  margin-block: 22px;
+  padding: 15px 17px;
+  background: var(--surface);
+  border: 1px solid var(--oxblood);
+  border-left: 5px solid var(--oxblood);
+}
+.wire h3 { font-size: 14px; font-weight: 700; color: var(--oxblood); font-family: var(--sans); }
+.wire p { margin: 7px 0 0; font-size: 13.5px; color: var(--ink); max-width: 48em; }
+.wire code {
+  padding: 1px 5px;
+  background: var(--surface-sunk);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+/* --- answer ------------------------------------------------------- */
+.answer-wrap { margin-block: 30px 0; }
+
+.verdict {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 4px 11px 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.verdict[data-kind="answered"] { background: var(--accent-soft); color: var(--accent-ink); }
+.verdict[data-kind="refused"]  { background: var(--oxblood-soft); color: var(--oxblood); }
+
+.refusal {
+  margin-block: 18px;
+  padding-left: 18px;
+  border-left: 5px solid var(--oxblood);
+}
+.refusal h3 {
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.refusal .reason {
+  display: inline-block;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--oxblood);
+}
+.refusal p { margin: 7px 0 0; max-width: 40em; font-size: 14.5px; color: var(--ink-soft); }
+
+.prose {
+  margin-block: 18px;
+  padding: 2px 0 2px 18px;
+  border-left: 5px solid var(--accent);
+  max-width: 40em;
+}
+.prose.quiet { border-left-color: var(--rule); }
+.prose p, .prose li {
+  font-family: var(--serif);
+  font-size: 17.5px;
+  line-height: 1.58;
+}
+.prose p { margin: 0 0 .85em; }
+.prose p:last-child { margin-bottom: 0; }
+.prose ul { margin: 0 0 .85em; padding-left: 1.25em; }
+.prose li { margin-bottom: .3em; }
+.prose code { font-family: var(--mono); font-size: .85em; }
+
+.cite {
+  padding: 0 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  font-family: var(--mono);
+  font-size: .78em;
+  letter-spacing: -.01em;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+.cite.invented {
+  background: var(--oxblood-soft);
+  border-bottom: 2px solid var(--oxblood);
+  color: var(--oxblood);
+  font-weight: 700;
+}
+
+.authorities { margin-block: 26px; }
+.authorities ol {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+.authorities li {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr) auto;
+  gap: 2px 14px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.authorities .ref { font-family: var(--mono); font-size: 12.5px; color: var(--accent); font-weight: 600; }
+.authorities .ttl { font-family: var(--serif); font-size: 15.5px; }
+.authorities .aux {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.authorities .none { padding: 10px 0; font-size: 13.5px; color: var(--ink-faint); border-bottom: 1px solid var(--rule-soft); }
+
+/* --- metrics footer ----------------------------------------------- */
+.ledger {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin-top: 28px;
+  padding-top: 0;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+.ledger div {
+  flex: 1 1 7.5rem;
+  padding: 9px 11px;
+  background: var(--surface);
+}
+.ledger dt {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.ledger dd {
+  margin: 3px 0 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.ledger dd small { font-size: 11px; color: var(--ink-faint); }
+.ledger div[data-wide] { flex: 2 1 13rem; }
+.ledger dd.warn { color: var(--amber); }
+
+.footnote {
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+  font-size: 12px;
+  color: var(--ink-faint);
+  max-width: 46em;
+}
+
+@media (max-width: 760px) {
+  .standfirst { grid-template-columns: 1fr; gap: 18px; }
+  .authorities li { grid-template-columns: 1fr; }
+  .authorities .aux { grid-column: 1; }
+}
+@media (max-width: 440px) {
+  body { padding-inline: 16px; }
+  .step { grid-template-columns: 3.1rem 1fr; gap: 0 10px; }
+  .step::before { left: calc(3.1rem + 11px); }
+  #endpoint { width: 100%; }
+  .rail { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="masthead">
+    <div>
+      <p class="eyebrow" style="margin:0 0 6px">tax-agent · POST /ask/stream</p>
+      <h1><span class="seal">ITA</span>Income-tax Answer Console</h1>
+    </div>
+
+    <div class="rail">
+      <label for="endpoint">Endpoint</label>
+      <input id="endpoint" type="text" spellcheck="false" autocomplete="off"
+             inputmode="url" placeholder="http://localhost:8080">
+      <button class="mini" id="recheck" type="button">Check</button>
+      <div class="health" id="health" data-state="idle">
+        <span class="lamp" aria-hidden="true"></span>
+        <span id="healthText">Not checked yet</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="standfirst">
+    <p>Questions about the <strong>Income-tax Act, 1961</strong> and the
+      <strong>Income-tax Act, 2025</strong>, answered only from the text of the
+      statute and the departmental guidance the service has indexed &mdash; never
+      from the model's memory.</p>
+
+    <dl class="claims">
+      <div><dt>Narrates</dt><dd>every retrieval and generation step arrives while
+        the request is still running.</dd></div>
+      <div><dt>Cites</dt><dd>each claim carries an act code and section, checked
+        against the provisions actually supplied.</dd></div>
+      <div><dt>Refuses</dt><dd>advice, computed liability and anything the corpus
+        does not cover come back as a refusal with a reason.</dd></div>
+    </dl>
+  </section>
+
+  <form class="docket" id="askForm" autocomplete="off">
+    <div class="docket-head">
+      <label class="eyebrow" for="question" style="letter-spacing:.1em">Question</label>
+      <span class="hint" id="charCount">0 / 2000</span>
+    </div>
+
+    <textarea id="question" name="question" required maxlength="2000" rows="3"
+      placeholder="Which section of the 1961 Act charges interest for a late filed return of income?"></textarea>
+
+    <div class="controls">
+      <label class="field grow">
+        <span>Tax year</span>
+        <select id="taxYear">
+          <option value="">Let the service decide</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Max tokens</span>
+        <input id="maxTokens" type="number" min="1" max="8000" step="1"
+               inputmode="numeric" value="1200">
+      </label>
+
+      <button class="primary" id="ask" type="submit">Ask</button>
+      <button class="ghost" id="stop" type="button" hidden>Stop</button>
+    </div>
+  </form>
+
+  <section class="samples">
+    <div class="section-head">
+      <h2>Four questions worth watching</h2>
+      <span class="meta">from eval/questions.yaml</span>
+    </div>
+    <div class="samples-grid" id="samples"></div>
+  </section>
+
+  <section class="map" id="map">
+    <p class="eyebrow">What you will watch happen</p>
+    <p>The service reports each step as it finishes it &mdash; facts only, no
+      sentences; the wording below is this page's. Embedding the question is a
+      network call and takes most of the retrieval time; the model takes the
+      rest. Two steps appear only when the question names a section outright.</p>
+    <ol class="map-steps" id="mapSteps"></ol>
+  </section>
+
+  <main id="run" hidden>
+    <section class="trace">
+      <div class="section-head">
+        <h2>Trace</h2>
+        <span class="meta" id="traceMeta">&nbsp;</span>
+      </div>
+      <p class="asked" id="asked"></p>
+      <ol class="log" id="log"></ol>
+    </section>
+
+    <div id="alerts"></div>
+
+    <section class="answer-wrap" id="answerWrap" hidden>
+      <div class="section-head">
+        <h2>Answer</h2>
+        <span class="verdict" id="verdict" data-kind="answered"></span>
+      </div>
+      <div id="answerBody"></div>
+
+      <div class="authorities" id="authorities"></div>
+      <dl class="ledger" id="ledger"></dl>
+      <p class="footnote" id="footnote"></p>
+    </section>
+  </main>
+
+</div>
+
+<script>
+"use strict";
+
+/* ================================================================== *
+ * Endpoint: editable, persisted, loosely validated.
+ * ================================================================== */
+const STORE_KEY = "ita-console.endpoint";
+const DEFAULT_ENDPOINT = "http://localhost:8080";
+
+const $ = (id) => document.getElementById(id);
+const endpointEl = $("endpoint");
+
+function normalizeEndpoint(raw) {
+  let v = (raw || "").trim();
+  if (!v) return DEFAULT_ENDPOINT;
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(v)) v = "http://" + v;
+  return v.replace(/\/+$/, "");
+}
+
+function readStored() {
+  try { return localStorage.getItem(STORE_KEY) || ""; } catch (_) { return ""; }
+}
+function writeStored(v) {
+  try { localStorage.setItem(STORE_KEY, v); } catch (_) { /* private mode */ }
+}
+
+let endpoint = normalizeEndpoint(readStored() || DEFAULT_ENDPOINT);
+endpointEl.value = endpoint;
+
+function commitEndpoint() {
+  const next = normalizeEndpoint(endpointEl.value);
+  const changed = next !== endpoint;
+  endpoint = next;
+  endpointEl.value = next;
+  writeStored(next);
+  if (changed || healthEl.dataset.state === "idle") checkHealth();
+}
+
+endpointEl.addEventListener("change", commitEndpoint);
+endpointEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); commitEndpoint(); }
+});
+$("recheck").addEventListener("click", () => { commitEndpoint(); checkHealth(); });
+
+/* ================================================================== *
+ * Health lamp.
+ * ================================================================== */
+const healthEl = $("health");
+const healthText = $("healthText");
+let healthToken = 0;
+
+function setHealth(state, text) {
+  healthEl.dataset.state = state;
+  healthText.textContent = text;
+}
+
+async function checkHealth() {
+  const token = ++healthToken;
+  const target = endpoint;
+  setHealth("probing", "Checking " + target.replace(/^https?:\/\//, "") + "…");
+
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 6000);
+
+  try {
+    const res = await fetch(target + "/health", {
+      method: "GET", signal: ctl.signal, cache: "no-store",
+    });
+    clearTimeout(timer);
+    if (token !== healthToken) return;
+
+    if (!res.ok) { setHealth("down", "/health returned HTTP " + res.status); return; }
+
+    const body = await res.json();
+    setHealth("ok",
+      (body.status || "ok") + " · v" + (body.version || "?") +
+      " · " + (body.environment || "?") +
+      " · corpus " + (body.corpus_date || "unknown"));
+  } catch (err) {
+    clearTimeout(timer);
+    if (token !== healthToken) return;
+    if (err && err.name === "AbortError") { setHealth("down", "No reply in 6s"); return; }
+    setHealth("down", "Unreachable — or CORS blocked");
+  }
+}
+
+/* ================================================================== *
+ * Tax-year control. The year picks the governing Act: the 1961 Act
+ * through 2025, the 2025 Act from 2026.
+ * ================================================================== */
+(function buildYears() {
+  const sel = $("taxYear");
+  const fy = (y) => "FY " + y + "-" + String((y + 1) % 100).padStart(2, "0");
+
+  const older = document.createElement("optgroup");
+  older.label = "Income-tax Act, 1961 governs";
+  for (let y = 2025; y >= 2015; y--) {
+    const o = document.createElement("option");
+    o.value = String(y); o.textContent = fy(y);
+    older.appendChild(o);
+  }
+
+  const newer = document.createElement("optgroup");
+  newer.label = "Income-tax Act, 2025 governs";
+  for (let y = 2026; y <= 2035; y++) {
+    const o = document.createElement("option");
+    o.value = String(y); o.textContent = fy(y);
+    newer.appendChild(o);
+  }
+
+  sel.append(newer, older);
+})();
+
+/* ================================================================== *
+ * Example questions, taken from eval/questions.yaml.
+ * ================================================================== */
+const SAMPLES = [
+  {
+    demonstrates: "Exact fact",
+    shows: "one provision, one specific figure",
+    question: "What is the maximum deduction allowed for life insurance premium under the Income-tax Act 2025?",
+    tax_year: "2027",
+  },
+  {
+    demonstrates: "Named section",
+    shows: "fetched exactly, not by similarity",
+    question: "Interest for default in furnishing a return was section 234A in the 1961 Act. What is it in the 2025 Act?",
+    tax_year: "",
+  },
+  {
+    demonstrates: "Departmental guidance",
+    shows: "answered by procedure, not statute",
+    question: "Which ITR form should a salaried individual file?",
+    tax_year: "",
+  },
+  {
+    demonstrates: "Must refuse",
+    shows: "asks for advice — out of scope",
+    question: "Given my salary of 35 lakh, should I choose the old or the new tax regime?",
+    tax_year: "",
+  },
+];
+
+(function buildSamples() {
+  const wrap = $("samples");
+  for (const s of SAMPLES) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "sample";
+    b.innerHTML =
+      "<b></b><span></span><i></i>";
+    b.querySelector("b").textContent = s.demonstrates;
+    b.querySelector("span").textContent = s.question;
+    b.querySelector("i").textContent = s.shows;
+    b.addEventListener("click", () => {
+      $("question").value = s.question;
+      $("taxYear").value = s.tax_year;
+      updateCount();
+      submit();
+    });
+    wrap.appendChild(b);
+  }
+})();
+
+/* ================================================================== *
+ * The step vocabulary. Facts come from the service; wording is ours.
+ * ================================================================== */
+const STEP_ORDER = [
+  "received", "resolving", "year_resolved", "embedding", "embedded",
+  "searching", "searched", "filtering", "looking_up", "looked_up",
+  "capping", "retrieved", "prompting", "generating", "generated",
+  "verifying", "verified", "refused", "done",
+];
+const CONDITIONAL = new Set(["looking_up", "looked_up", "refused"]);
+
+const LABEL = {
+  received:     "Question accepted",
+  resolving:    "Working out which tax year applies",
+  year_resolved:"Tax year settled",
+  embedding:    "Turning the question into a vector",
+  embedded:     "Vector ready",
+  searching:    "Querying the vector store",
+  searched:     "Candidates came back",
+  filtering:    "Dropping anything below the score floor",
+  looking_up:   "The question names a section — fetching it exactly",
+  looked_up:    "Named sections fetched",
+  capping:      "Capping how much of the window one section may take",
+  retrieved:    "Provisions in hand",
+  prompting:    "Assembling the provisions and the rules",
+  generating:   "Provisions are with the model",
+  generated:    "Model replied",
+  verifying:    "Checking every citation against what was supplied",
+  verified:     "Citations checked",
+  refused:      "Stopping without an answer",
+  done:         "Answer complete",
+  failed:       "Request failed",
+};
+
+const ACTS = {
+  "ITA-1961": "Income-tax Act, 1961",
+  "ITA-2025": "Income-tax Act, 2025",
+  "DEPT-GUIDANCE": "Departmental guidance",
+};
+
+const REFUSAL_PLAIN = {
+  nothing_retrieved: "Nothing in the corpus matched the question, so the model was never called. It cannot be talked into answering from memory.",
+  not_grounded: "The model was given provisions and cited none of them. An answer that cites nothing is treated as no answer.",
+  out_of_scope: "The question asks for advice or a computed liability. The prompt forbids both, so the model declared it out of scope and the citations were dropped.",
+  not_in_corpus: "The model read the provisions it was given and said they do not cover the question.",
+  needs_clarification: "A bare section number means different law in each Act, so the tax year has to be settled first.",
+};
+
+/* pretty-printers -------------------------------------------------- */
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const ms = (n) => (n == null ? "—" : n < 1000 ? n + " ms" : (n / 1000).toFixed(2) + " s");
+const fy = (y) => "FY " + y + "-" + String((y + 1) % 100).padStart(2, "0");
+
+function factsFor(step, d) {
+  const F = [];
+  const add = (label, value, cls) => { if (value !== undefined && value !== null && value !== "") F.push({ label, value, cls }); };
+
+  switch (step) {
+    case "received":
+      add("characters", d.question_length); break;
+
+    case "year_resolved":
+      add("year", d.tax_year == null ? "not specified" : fy(d.tax_year));
+      add("from", { request: "the request", question: "the question text", none: "neither" }[d.source] || d.source);
+      add("governs", d.governing_act ? ACTS[d.governing_act] || d.governing_act : "both Acts in play");
+      break;
+
+    case "embedding":  add("model", d.model); break;
+    case "embedded":   add("dimensions", d.dimensions); add("took", ms(d.took_ms)); break;
+    case "searching":
+      add("store", d.store); add("over-fetch", d.limit);
+      add("year filter", d.tax_year == null ? "none" : d.tax_year);
+      break;
+    case "searched":   add("candidates", d.candidates); break;
+    case "filtering":
+      add("floor", d.min_score); add("kept", d.kept);
+      add("dropped", d.dropped, d.dropped > 0 ? "warnish" : null);
+      break;
+    case "looking_up": add("sections", (d.sections || []).map((s) => "s." + s).join(", ")); break;
+    case "looked_up":
+      add("sections", (d.sections || []).map((s) => "s." + s).join(", "));
+      add("chunks found", d.found);
+      break;
+    case "capping":
+      add("max per section", d.max_per_section);
+      add("window", d.before + " → " + d.after);
+      break;
+    case "retrieved":
+      add("provisions", d.count);
+      add("acts", (d.acts || []).join(" · "));
+      add("took", ms(d.took_ms));
+      break;
+    case "prompting":  add("provisions", d.provisions); add("rules", d.rules); break;
+    case "generating": add("prompt", (d.prompt_characters || 0).toLocaleString() + " chars"); add("budget", d.max_tokens + " tokens"); break;
+    case "generated":
+      add("model", d.model);
+      add("completion", d.completion_tokens);
+      if (d.reasoning_tokens) add("reasoning", d.reasoning_tokens);
+      add("total", d.total_tokens);
+      add("finish", d.finish_reason, d.finish_reason === "length" ? "warnish" : null);
+      add("took", ms(d.took_ms));
+      break;
+    case "verified":
+      add("held up", (d.cited || []).length ? d.cited.join(", ") : "none", (d.cited || []).length ? "good" : "warnish");
+      add("invented", (d.invented || []).length ? d.invented.join(", ") : "none", (d.invented || []).length ? "bad" : null);
+      break;
+    case "refused":
+      add("reason", d.reason, "bad");
+      add("model called", d.model_called ? "yes" : "no — never reached it");
+      break;
+    case "done":
+      add("refused", d.refused ? "yes" : "no", d.refused ? "bad" : "good");
+      add("citations", (d.citations || []).length);
+      add("end to end", ms(d.latency_ms));
+      break;
+    case "failed":
+      add("error", d.error_code, "bad");
+      add("message", d.message);
+      break;
+  }
+  return F;
+}
+
+/* ================================================================== *
+ * Run state and the trace.
+ * ================================================================== */
+const runEl = $("run"), logEl = $("log"), alertsEl = $("alerts");
+const answerWrap = $("answerWrap");
+let controller = null;
+let t0 = 0;
+let ticker = null;
+let stepCount = 0;
+let lastStepEl = null;
+
+function since() { return (performance.now() - t0) / 1000; }
+function stamp(s) { return "+" + s.toFixed(2) + "s"; }
+
+function setBusy(busy) {
+  $("ask").disabled = busy;
+  $("ask").textContent = busy ? "Working…" : "Ask";
+  $("stop").hidden = !busy;
+}
+
+function startTicker() {
+  const meta = $("traceMeta");
+  const paint = () => {
+    meta.textContent = stepCount + (stepCount === 1 ? " step" : " steps") +
+      " · " + since().toFixed(2) + "s elapsed";
+  };
+  paint();
+  ticker = setInterval(paint, 90);
+}
+function stopTicker(suffix) {
+  if (ticker) { clearInterval(ticker); ticker = null; }
+  $("traceMeta").textContent =
+    stepCount + (stepCount === 1 ? " step" : " steps") + " · " + suffix;
+}
+
+function markSettled(tone) {
+  if (!lastStepEl) return;
+  lastStepEl.dataset.active = "false";
+  lastStepEl.dataset.done = "true";
+  if (tone) lastStepEl.dataset.tone = tone;
+  lastStepEl = null;
+}
+
+function addStep(name, detail, opts) {
+  opts = opts || {};
+  markSettled();
+  stepCount++;
+
+  const li = document.createElement("li");
+  li.className = "step";
+  li.dataset.active = opts.terminal ? "false" : "true";
+  li.dataset.done = opts.terminal ? "true" : "false";
+  if (opts.tone) li.dataset.tone = opts.tone;
+
+  const known = Object.prototype.hasOwnProperty.call(LABEL, name);
+  if (!known) li.dataset.tone = "unknown";
+
+  const at = document.createElement("div");
+  at.className = "at";
+  at.textContent = stamp(since());
+
+  const body = document.createElement("div");
+  body.className = "body";
+
+  const nm = document.createElement("div");
+  nm.className = "name";
+  nm.textContent = name;
+
+  const said = document.createElement("div");
+  said.className = "said";
+  said.textContent = known
+    ? LABEL[name]
+    : "New step — this page has no wording for it yet";
+
+  body.append(nm, said);
+
+  const facts = known ? factsFor(name, detail || {}) : [];
+  if (facts.length) {
+    const row = document.createElement("div");
+    row.className = "facts";
+    for (const f of facts) {
+      const span = document.createElement("span");
+      const b = document.createElement("b");
+      b.textContent = f.label;
+      const v = document.createElement("span");
+      v.className = "v" + (f.cls === "bad" ? " bad" : f.cls === "good" ? " good" : "");
+      if (f.cls === "warnish") v.style.color = "var(--amber)";
+      v.textContent = String(f.value);
+      span.append(b, v);
+      row.appendChild(span);
+    }
+    body.appendChild(row);
+  }
+
+  if (name === "retrieved" && Array.isArray(detail.sections) && detail.sections.length) {
+    body.appendChild(provisionTable(detail.sections));
+  }
+
+  li.append(at, body);
+  logEl.appendChild(li);
+  if (!opts.terminal) lastStepEl = li;
+  return li;
+}
+
+function provisionTable(rows) {
+  const wrap = document.createElement("div");
+  wrap.className = "provisions";
+
+  const head = "<thead><tr><th>Act</th><th>Section</th><th>Title</th><th>Score</th></tr></thead>";
+  const body = rows.map((r) => {
+    const pct = Math.max(0, Math.min(1, Number(r.score) || 0)) * 100;
+    return "<tr>" +
+      '<td class="act">' + esc(r.act || "—") + "</td>" +
+      '<td class="sec">' + (r.section ? "s." + esc(r.section) : "—") + "</td>" +
+      '<td class="ttl">' + esc(r.title || "—") + "</td>" +
+      '<td class="sco"><span class="bar"><i style="width:' + pct.toFixed(1) + '%"></i>' +
+        "<em>" + (Number(r.score) || 0).toFixed(3) + "</em></span></td>" +
+      "</tr>";
+  }).join("");
+
+  wrap.innerHTML = "<table>" + head + "<tbody>" + body + "</tbody></table>";
+  return wrap;
+}
+
+/* ================================================================== *
+ * Answer rendering. The answer is plain text with light markdown and
+ * inline citations in the form (ITA-1961 s.234A).
+ * ================================================================== */
+const CITE_RE = /\b([A-Z][A-Z0-9]{1,5}-[A-Z0-9]{2,10})\s+(?:s\.\s*|sections?\s+)([0-9A-Za-z][0-9A-Za-z-]*)/g;
+
+function inline(text, invented) {
+  let out = esc(text);
+
+  out = out.replace(CITE_RE, (match, act, num) => {
+    const ref = act + " s." + num.replace(/[.,;)]+$/, "");
+    const bad = invented.has(ref);
+    return '<span class="cite' + (bad ? " invented" : "") + '">' + match + "</span>";
+  });
+
+  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+  return out;
+}
+
+function renderProse(text, invented) {
+  const container = document.createElement("div");
+  const blocks = String(text || "").trim().split(/\n{2,}/);
+
+  for (const block of blocks) {
+    const lines = block.split("\n").filter((l) => l.trim());
+    const bullets = lines.length && lines.every((l) => /^\s*([-*•]|\d+[.)])\s+/.test(l));
+
+    if (bullets) {
+      const ul = document.createElement("ul");
+      for (const l of lines) {
+        const li = document.createElement("li");
+        li.innerHTML = inline(l.replace(/^\s*([-*•]|\d+[.)])\s+/, ""), invented);
+        ul.appendChild(li);
+      }
+      container.appendChild(ul);
+    } else {
+      const p = document.createElement("p");
+      p.innerHTML = inline(lines.join(" "), invented);
+      container.appendChild(p);
+    }
+  }
+  return container;
+}
+
+function renderResult(r) {
+  const invented = new Set(r.unsupported_citations || []);
+
+  /* 1. Invented citations first, and loudly. */
+  if (invented.size) {
+    const box = document.createElement("section");
+    box.className = "alarm";
+    box.innerHTML =
+      "<h3>" + invented.size + " invented citation" + (invented.size === 1 ? "" : "s") + "</h3>" +
+      "<p>The model cited a provision it was never given. This is the most " +
+      "serious failure this system has, because a fabricated section reference " +
+      "looks exactly like a correct one. The references below are flagged in " +
+      "the answer text too.</p><ul></ul>";
+    const ul = box.querySelector("ul");
+    for (const ref of invented) {
+      const li = document.createElement("li");
+      li.textContent = ref;
+      ul.appendChild(li);
+    }
+    alertsEl.appendChild(box);
+  }
+
+  /* 2. Verdict + answer or refusal. */
+  const verdict = $("verdict");
+  const body = $("answerBody");
+  body.textContent = "";
+
+  if (r.refused) {
+    verdict.dataset.kind = "refused";
+    verdict.textContent = "Refused";
+
+    const ref = document.createElement("div");
+    ref.className = "refusal";
+    const reason = r.refusal_reason || "unknown";
+    ref.innerHTML =
+      "<h3>No answer given</h3>" +
+      '<span class="reason">' + esc(reason) + "</span>" +
+      "<p>" + esc(REFUSAL_PLAIN[reason] || "The service withheld an answer.") + "</p>";
+    body.appendChild(ref);
+
+    const heading = document.createElement("p");
+    heading.className = "eyebrow";
+    heading.style.margin = "22px 0 0";
+    heading.textContent = "What the service said instead";
+    body.appendChild(heading);
+
+    const prose = renderProse(r.answer, invented);
+    prose.className = "prose quiet";
+    body.appendChild(prose);
+  } else {
+    verdict.dataset.kind = "answered";
+    verdict.textContent = "Answered · " + (r.citations || []).length +
+      " citation" + ((r.citations || []).length === 1 ? "" : "s");
+
+    const prose = renderProse(r.answer, invented);
+    prose.className = "prose";
+    body.appendChild(prose);
+  }
+
+  /* 3. Authorities relied on. */
+  const auth = $("authorities");
+  auth.textContent = "";
+  const ah = document.createElement("div");
+  ah.className = "section-head";
+  ah.innerHTML = "<h2>Authorities cited</h2><span class='meta'>act · section · title</span>";
+  auth.appendChild(ah);
+
+  const ol = document.createElement("ol");
+  if (!(r.citations || []).length) {
+    const none = document.createElement("li");
+    none.className = "none";
+    none.textContent = r.refused
+      ? (r.refusal_reason === "out_of_scope"
+          ? "None returned — on an out-of-scope refusal the service drops the citations even though provisions were read."
+          : "None — no provision in the corpus supported an answer.")
+      : "None returned.";
+    ol.appendChild(none);
+  } else {
+    for (const c of r.citations) {
+      const li = document.createElement("li");
+      const ref = document.createElement("span");
+      ref.className = "ref";
+      ref.textContent = c.act + (c.section_number ? "  s." + c.section_number : "");
+      const ttl = document.createElement("span");
+      ttl.className = "ttl";
+      ttl.textContent = c.section_title || (ACTS[c.act] || c.act);
+      const aux = document.createElement("span");
+      aux.className = "aux";
+      aux.textContent = (c.page_start != null ? "p. " + c.page_start + " · " : "") +
+        "score " + (Number(c.score) || 0).toFixed(3);
+      li.append(ref, ttl, aux);
+      ol.appendChild(li);
+    }
+  }
+  auth.appendChild(ol);
+
+  /* 4. Timings and tokens. */
+  const led = $("ledger");
+  led.textContent = "";
+  const cell = (label, value, opts) => {
+    const d = document.createElement("div");
+    if (opts && opts.wide) d.dataset.wide = "true";
+    const dt = document.createElement("dt"); dt.textContent = label;
+    const dd = document.createElement("dd");
+    if (opts && opts.warn) dd.className = "warn";
+    dd.innerHTML = value;
+    d.append(dt, dd);
+    led.appendChild(d);
+  };
+
+  const tok = (n) => (n == null ? "—" : Number(n).toLocaleString());
+
+  cell("retrieval", esc(ms(r.retrieval_ms)));
+  cell("generation", esc(ms(r.llm_ms)));
+  cell("end to end", esc(ms(r.latency_ms)));
+  cell("tokens", tok(r.total_tokens) +
+    " <small>" + tok(r.prompt_tokens) + " in / " + tok(r.completion_tokens) + " out" +
+    (r.reasoning_tokens ? " / " + tok(r.reasoning_tokens) + " reasoning" : "") + "</small>");
+  cell("finish", esc(r.finish_reason || "—"), { warn: r.finish_reason === "length" });
+  cell("retrieved", String(r.retrieved) + " <small>provisions</small>");
+  cell("tax year", (r.tax_year == null ? "none" : fy(r.tax_year)) +
+    " <small>" + esc(r.tax_year_source) + "</small>");
+  cell("model", esc(r.model || "not called"), { wide: true });
+  cell("corpus", esc(r.corpus_date || "unknown"));
+
+  const note = $("footnote");
+  note.textContent = r.finish_reason === "length"
+    ? "The model stopped because it ran out of budget, so the answer may be cut off. Reasoning tokens count against max tokens — raise it and ask again."
+    : "Retrieval covers embedding the question and querying the vector store; the model figure is the gateway round trip. Anything left over is the service's own work.";
+
+  answerWrap.hidden = false;
+}
+
+/* ================================================================== *
+ * SSE over POST. EventSource only does GET, so this reads the body
+ * stream itself and reassembles frames across chunk boundaries.
+ * ================================================================== */
+function makeFrameReader(onFrame) {
+  let buffer = "";
+
+  function push(text) {
+    buffer += text;
+
+    // A chunk may end mid-CRLF. Hold a trailing \r back until the next
+    // chunk shows what follows it, or a frame boundary is split in two.
+    if (buffer.endsWith("\r")) return;
+
+    buffer = buffer.replace(/\r\n|\r/g, "\n");
+
+    let cut;
+    while ((cut = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      if (frame.trim()) onFrame(frame);
+    }
+  }
+
+  function flush() {
+    // A final frame with no trailing blank line is still a frame.
+    buffer = buffer.replace(/\r\n|\r/g, "\n");
+    if (buffer.trim()) { onFrame(buffer); }
+    buffer = "";
+  }
+
+  return { push, flush };
+}
+
+function parseFrame(frame) {
+  let event = "message";
+  const data = [];
+
+  for (const line of frame.split("\n")) {
+    if (!line || line.charCodeAt(0) === 58 /* ':' comment */) continue;
+    const colon = line.indexOf(":");
+    let field, value;
+    if (colon === -1) { field = line; value = ""; }
+    else {
+      field = line.slice(0, colon);
+      value = line.slice(colon + 1);
+      if (value.charCodeAt(0) === 32) value = value.slice(1);
+    }
+    if (field === "event") event = value;
+    else if (field === "data") data.push(value);
+  }
+
+  return { event, raw: data.join("\n") };
+}
+
+/* ================================================================== *
+ * Failure reporting. CORS is the likeliest first failure, and the
+ * browser will not say so, so this page says it instead.
+ * ================================================================== */
+function wire(title, html) {
+  const box = document.createElement("section");
+  box.className = "wire";
+  box.innerHTML = "<h3>" + esc(title) + "</h3>" + html;
+  alertsEl.appendChild(box);
+}
+
+function reportFetchFailure(err, target) {
+  const host = esc(target);
+  const fileOrigin = location.protocol === "file:";
+
+  wire("Could not reach the tax-agent", "<p>The browser refused the request to " +
+    "<code>" + host + "/ask/stream</code> before any status code came back. " +
+    "That is nearly always one of two things.</p>" +
+    "<p><strong>1. CORS.</strong> The service only sends CORS headers when " +
+    "<code>CORS_ALLOW_ORIGINS</code> is set. Set " +
+    "<code>CORS_ALLOW_ORIGINS=*</code> on the tax-agent and restart it." +
+    (fileOrigin
+      ? " This page is open from <code>file://</code>, so the browser sends " +
+        "<code>Origin: null</code> — only <code>*</code> will match it, not a " +
+        "named origin."
+      : "") +
+    "</p>" +
+    "<p><strong>2. Nothing listening.</strong> Check the endpoint above: " +
+    "<code>" + host + "</code>. Wrong port, a stopped container, or a public " +
+    "address that is no longer up all look identical to CORS from inside a " +
+    "browser.</p>" +
+    "<p class='eyebrow' style='margin-top:10px'>Reported by the browser as: " +
+    esc(err && err.message ? err.message : String(err)) + "</p>");
+}
+
+/* ================================================================== *
+ * Ask.
+ * ================================================================== */
+function updateCount() {
+  const n = $("question").value.length;
+  $("charCount").textContent = n + " / 2000";
+}
+$("question").addEventListener("input", updateCount);
+$("question").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
+});
+
+$("askForm").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
+$("stop").addEventListener("click", () => {
+  if (controller) controller.abort();
+});
+
+async function submit() {
+  const question = $("question").value.trim();
+  if (!question) { $("question").focus(); return; }
+
+  commitEndpoint();
+  const target = endpoint;
+
+  const yearRaw = $("taxYear").value;
+  const maxTokens = Math.min(8000, Math.max(1, parseInt($("maxTokens").value, 10) || 1200));
+  $("maxTokens").value = maxTokens;
+
+  const payload = {
+    question: question,
+    max_tokens: maxTokens,
+    tax_year: yearRaw ? parseInt(yearRaw, 10) : null,
+  };
+
+  /* reset the run */
+  if (controller) controller.abort();
+  controller = new AbortController();
+
+  runEl.hidden = false;
+  $("map").hidden = true;
+  logEl.textContent = "";
+  alertsEl.textContent = "";
+  answerWrap.hidden = true;
+  $("asked").textContent = question;
+  stepCount = 0;
+  lastStepEl = null;
+  t0 = performance.now();
+  startTicker();
+  setBusy(true);
+
+  const reader = makeFrameReader((frame) => {
+    const { event, raw } = parseFrame(frame);
+    let payloadObj;
+    try { payloadObj = JSON.parse(raw); }
+    catch (_) { console.warn("Unparseable SSE data", raw); return; }
+
+    const step = payloadObj.step || "(unnamed)";
+
+    if (event === "status") {
+      addStep(step, payloadObj, { tone: step === "refused" ? "bad" : null });
+    } else if (event === "result") {
+      markSettled();
+      addStep("done", payloadObj, { terminal: true, tone: payloadObj.refused ? "bad" : null });
+      stopTicker(ms(payloadObj.latency_ms) + " reported by the service");
+      renderResult(payloadObj);
+      const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      answerWrap.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+    } else if (event === "error") {
+      markSettled();
+      addStep("failed", payloadObj, { terminal: true, tone: "bad" });
+      stopTicker("failed after " + since().toFixed(2) + "s");
+      wire("The pipeline failed mid-stream",
+        "<p>The service had already sent HTTP 200, so the failure arrived as an " +
+        "<code>error</code> frame rather than a status code.</p>" +
+        "<p><code>" + esc(payloadObj.error_code || "UNKNOWN") + "</code> — " +
+        esc(payloadObj.message || "no message") + "</p>");
+    } else {
+      console.debug("Ignoring unknown SSE event", event, payloadObj);
+    }
+  });
+
+  try {
+    const res = await fetch(target + "/ask/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      let detail = text;
+      try {
+        const j = JSON.parse(text);
+        detail = "<code>" + esc(j.error_code || res.status) + "</code> — " +
+          esc(j.message || "no message") +
+          (j.request_id ? "<br><span class='eyebrow'>request " + esc(j.request_id) + "</span>" : "") +
+          (Array.isArray(j.details) && j.details.length
+            ? "<br><span class='eyebrow'>" + esc(JSON.stringify(j.details)) + "</span>"
+            : "");
+      } catch (_) {
+        detail = "<code>HTTP " + res.status + "</code> " + esc(text.slice(0, 400));
+      }
+      stopTicker("rejected with HTTP " + res.status);
+      wire("The service rejected the request",
+        "<p>" + detail + "</p>" +
+        (res.status === 422
+          ? "<p>422 means the body failed validation: the question must be 1–2000 " +
+            "characters, max tokens 1–8000, and the tax year 1961–2100.</p>"
+          : ""));
+      setBusy(false);
+      controller = null;
+      return;
+    }
+
+    if (!res.body) {
+      stopTicker("no readable body");
+      wire("This browser gave no readable stream",
+        "<p>The response arrived but <code>response.body</code> is missing, so the " +
+        "steps cannot be read as they happen. A current Chrome, Safari, Firefox or " +
+        "Edge supports it.</p>");
+      setBusy(false);
+      controller = null;
+      return;
+    }
+
+    const bodyReader = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+
+    for (;;) {
+      const { value, done } = await bodyReader.read();
+      if (done) break;
+      reader.push(decoder.decode(value, { stream: true }));
+    }
+    reader.push(decoder.decode());
+    reader.flush();
+
+    if (ticker) stopTicker("stream closed after " + since().toFixed(2) + "s");
+    markSettled();
+
+    if (answerWrap.hidden && !alertsEl.children.length) {
+      wire("The stream ended without an answer",
+        "<p>The connection closed after " + since().toFixed(2) + "s with no " +
+        "<code>result</code> frame. Check the tax-agent logs for the request id " +
+        "in the response headers.</p>");
+    }
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      stopTicker("stopped after " + since().toFixed(2) + "s");
+      markSettled("warn");
+    } else if (err instanceof TypeError) {
+      stopTicker("no connection");
+      markSettled("bad");
+      reportFetchFailure(err, target);
+      setHealth("down", "Unreachable — or CORS blocked");
+    } else {
+      stopTicker("failed after " + since().toFixed(2) + "s");
+      markSettled("bad");
+      wire("Something went wrong in the browser",
+        "<p>" + esc(err && err.message ? err.message : String(err)) + "</p>");
+    }
+  } finally {
+    setBusy(false);
+    controller = null;
+  }
+}
+
+/* ================================================================== *
+ * At rest.
+ * ================================================================== */
+(function buildMap() {
+  const ol = $("mapSteps");
+  for (const name of STEP_ORDER) {
+    const li = document.createElement("li");
+    if (CONDITIONAL.has(name)) {
+      li.dataset.conditional = "true";
+      const u = document.createElement("u");
+      u.textContent = name;
+      u.title = name === "refused"
+        ? "only on a refusal"
+        : "only when the question names a section";
+      li.appendChild(u);
+    } else {
+      li.textContent = name;
+    }
+    ol.appendChild(li);
+  }
+})();
+
+updateCount();
+checkHealth();
+</script>
+</body>
+</html>

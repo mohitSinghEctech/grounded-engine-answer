@@ -1,0 +1,39 @@
+# Build context for Dockerfile.standalone is the repository root, so
+# everything large and irrelevant is excluded here. Without this the
+# context includes the virtualenv, the source PDFs and all of git.
+.git
+.github
+
+.venv/
+venv/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Source material and intermediate artefacts. data/index is the ONE thing
+# the standalone image needs, so it is re-included below.
+data/raw/
+data/parsed/
+data/export/
+data/*.db
+!data/index/
+
+eval/runs/
+docs/
+corpus-builder/
+services/llm-gateway/
+
+*.log
+logs/
+.idea/
+.vscode/
+.DS_Store

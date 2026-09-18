@@ -1,0 +1,118 @@
+{
+  "generated_at": "2026-09-14T00:24:30.711312+05:30",
+  "files": [
+    {
+      "path": "raw/budget-highlights-2026.pdf",
+      "source_url": "https://www.indiabudget.gov.in/doc/bh1.pdf",
+      "sha256": "1738a3708ccf0550c45d0c739cb87cedc81e6aa1be15c3e8224fe21565eeb337",
+      "bytes": 2517891,
+      "retrieved_at": "2026-09-14T00:24:30.713605+05:30",
+      "kind": "statute",
+      "pages": 23,
+      "has_text_layer": true
+    },
+    {
+      "path": "raw/finance-bill-2026-memorandum.pdf",
+      "source_url": "https://www.indiabudget.gov.in/doc/memo.pdf",
+      "sha256": "78f81425565e23b16424b113d6a91e13292d912a8d55b75c5387f195159f3416",
+      "bytes": 3124134,
+      "retrieved_at": "2026-09-14T00:24:30.745003+05:30",
+      "kind": "statute",
+      "pages": 100,
+      "has_text_layer": true
+    },
+    {
+      "path": "raw/finance-bill-2026.pdf",
+      "source_url": "https://www.indiabudget.gov.in/doc/Finance_Bill.pdf",
+      "sha256": "5c98701714c4c473bcd097e376124a4c075881836fe92a5fc4615613c09edabf",
+      "bytes": 1782371,
+      "retrieved_at": "2026-09-14T00:24:30.802098+05:30",
+      "kind": "statute",
+      "pages": 232,
+      "has_text_layer": true
+    },
+    {
+      "path": "raw/guidance/company-ay1.txt",
+      "source_url": "https://www.incometax.gov.in/iec/foportal/help/company/return-applicable",
+      "sha256": "fe42224a62b10c4ea1019def640433dd8d18ebcdaf4cf34017bce07495aaa6c6",
+      "bytes": 13640,
+      "retrieved_at": "2026-09-14T00:24:30.870329+05:30",
+      "has_text_layer": true,
+      "kind": "guidance"
+    },
+    {
+      "path": "raw/guidance/company-ay2.txt",
+      "source_url": "https://www.incometax.gov.in/iec/foportal/help/company/return-applicable-0",
+      "sha256": "738e21e748c359ec78b6bff80aae5c7e365d471ff62fd8c36835f13400ba11f7",
+      "bytes": 8263,
+      "retrieved_at": "2026-09-14T00:24:30.870600+05:30",
+      "has_text_layer": true,
+      "kind": "guidance"
+    },
+    {
+      "path": "raw/guidance/dos-and-donts.txt",
+      "source_url": "https://www.incometax.gov.in/iec/foportal/help/all-topics/dosndont",
+      "sha256": "f7dd6df8881d117502679eff8be157336c4c5726a192b9ea53b10bbcae130630",
+      "bytes": 1448,
+      "retrieved_at": "2026-09-14T00:24:30.870802+05:30",
+      "has_text_layer": true,
+      "kind": "guidance"
+    },
+    {
+      "path": "raw/guidance/individual-ay1.txt",
+      "source_url": "https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable",
+      "sha256": "3c42d53886e0892e2925adad239549409f01bc19755ae1fe193b0f0c2f79706a",
+      "bytes": 13273,
+      "retrieved_at": "2026-09-14T00:24:30.871036+05:30",
+      "has_text_layer": true,
+      "kind": "guidance"
+    },
+    {
+      "path": "raw/guidance/individual-ay2.txt",
+      "source_url": "https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-0",
+      "sha256": "2bd4ed599f9a2e5fed9d3098aadde2d51f76cade127a8f8db4cff71379260ffd",
+      "bytes": 18673,
+      "retrieved_at": "2026-09-14T00:24:30.871300+05:30",
+      "has_text_layer": true,
+      "kind": "guidance"
+    },
+    {
+      "path": "raw/guidance/individual-ay3.txt",
+      "source_url": "https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-1",
+      "sha256": "12c6223ee3e9818c767ef7e12ab2855e9619a870c063274b312c599476743170",
+      "bytes": 19104,
+      "retrieved_at": "2026-09-14T00:24:30.871610+05:30",
+      "has_text_layer": true,
+      "kind": "guidance"
+    },
+    {
+      "path": "raw/guidance/individual-business.txt",
+      "source_url": "https://www.incometax.gov.in/iec/foportal/help/individual-business-profession",
+      "sha256": "957f3e640b4084993fa6c2b5a23feb18af83805a91111f92a77086a689522072",
+      "bytes": 20959,
+      "retrieved_at": "2026-09-14T00:24:30.871802+05:30",
+      "has_text_layer": true,
+      "kind": "guidance"
+    },
+    {
+      "path": "raw/ita-1961.pdf",
+      "source_url": null,
+      "sha256": "8ace77db1c85a01573135391e4ab198efc3106a146a9cf069bc286c3080a5a41",
+      "bytes": 1901085,
+      "retrieved_at": "2026-09-14T00:24:30.873518+05:30",
+      "kind": "statute",
+      "pages": 780,
+      "has_text_layer": true
+    },
+    {
+      "path": "raw/ita-2025.pdf",
+      "source_url": null,
+      "sha256": "d54a0ed6a91673d1a4fbcef9b5e472c3efe441139fae38f85a5a0c5b2cfc998b",
+      "bytes": 3299341,
+      "retrieved_at": "2026-09-14T00:24:30.933113+05:30",
+      "kind": "statute",
+      "pages": 686,
+      "has_text_layer": true
+    }
+  ]
+}

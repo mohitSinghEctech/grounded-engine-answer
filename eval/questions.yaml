@@ -1,0 +1,417 @@
+# Evaluation set v1 - 40 questions.
+#
+# verify: true  means the expected sections were inferred from section titles
+#               rather than read in full. Check these before trusting a score.
+#
+# tax_year is the STARTING year of the financial year: FY 2026-27 -> 2026.
+# The 1961 Act governs through 2025; the 2025 Act from 2026.
+
+meta:
+  version: 1
+  corpus_date: "2026-09-14"
+  collections: [ita_sections, ita_naive]
+
+questions:
+
+  # --- exact-fact: one provision, one specific figure or condition ---------
+
+  - id: EF-01
+    category: exact-fact
+    question: "What is the maximum deduction allowed for life insurance premium under the Income-tax Act 2025?"
+    tax_year: 2027
+    expected_acts: [ITA-2025]
+    expected_sections: ["123"]
+    # As the Act prints it. Corpus s.123 reads "does not exceed ₹150000",
+    # with no thousands separators, and rule 5 requires figures quoted
+    # exactly - so this is the faithful form. Digits are compared with
+    # separators stripped, so a model that writes ₹1,50,000 also passes.
+    answer_contains: ["150000"]
+    should_refuse: false
+    verify: false
+
+  - id: EF-02
+    category: exact-fact
+    question: "Under the 1961 Act, which section allows a deduction for health insurance premium?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["80D"]
+    should_refuse: false
+    verify: false
+
+  - id: EF-03
+    category: exact-fact
+    question: "What deduction is available for rent paid by a self-employed person under the 1961 Act?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["80GG"]
+    should_refuse: false
+    verify: false
+
+  - id: EF-04
+    category: exact-fact
+    question: "Which section of the 1961 Act deals with deduction for interest on deposits in a savings account?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["80TTA"]
+    should_refuse: false
+    verify: false
+
+  - id: EF-05
+    category: exact-fact
+    question: "What does the Income-tax Act 2025 define as a tax year?"
+    tax_year: 2027
+    expected_acts: [ITA-2025]
+    expected_sections: ["3"]
+    answer_contains: ["twelve months", "financial year"]
+    should_refuse: false
+    verify: false
+
+  - id: EF-06
+    category: exact-fact
+    question: "Under the 1961 Act, what is the penalty for under-reporting of income?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["270A"]
+    should_refuse: false
+    verify: false
+
+  - id: EF-07
+    category: exact-fact
+    question: "Which section of the 1961 Act charges interest for a late filed return of income?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["234A"]
+    should_refuse: false
+    verify: true
+
+  - id: EF-08
+    category: exact-fact
+    question: "What deduction is available under the 1961 Act for a person with a disability?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["80U"]
+    should_refuse: false
+    verify: false
+
+  # --- year-scoped: the filter must pick the governing Act ----------------
+
+  - id: YS-01
+    category: year-scoped
+    question: "Which deduction applies to life insurance premium for FY 2024-25?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["80C"]
+    should_refuse: false
+    verify: false
+
+  - id: YS-02
+    category: year-scoped
+    question: "Which deduction applies to life insurance premium for FY 2026-27?"
+    tax_year: 2026
+    expected_acts: [ITA-2025]
+    expected_sections: ["123"]
+    should_refuse: false
+    verify: false
+
+  - id: YS-03
+    category: year-scoped
+    question: "For AY 2027-28, which Act governs the computation of total income?"
+    tax_year: 2026
+    expected_acts: [ITA-2025]
+    expected_sections: []
+    should_refuse: false
+    verify: true
+
+  - id: YS-04
+    category: year-scoped
+    question: "What is the deduction for donations to charitable institutions in FY 2023-24?"
+    tax_year: 2023
+    expected_acts: [ITA-1961]
+    expected_sections: ["80G"]
+    should_refuse: false
+    verify: false
+
+  - id: YS-05
+    category: year-scoped
+    question: "What is the deduction for donations to charitable institutions in FY 2027-28?"
+    tax_year: 2027
+    expected_acts: [ITA-2025]
+    expected_sections: ["133"]
+    should_refuse: false
+    verify: false
+
+  - id: YS-06
+    category: year-scoped
+    question: "Under which provision is self-assessment tax paid for FY 2026-27?"
+    tax_year: 2026
+    expected_acts: [ITA-2025]
+    expected_sections: ["266"]
+    should_refuse: false
+    verify: true
+
+  - id: YS-07
+    category: year-scoped
+    question: "What deduction is available for NPS contributions for FY 2025-26?"
+    tax_year: 2025
+    expected_acts: [ITA-1961]
+    expected_sections: ["80CCD"]
+    should_refuse: false
+    verify: false
+
+  - id: YS-08
+    category: year-scoped
+    question: "What is the penalty for under-reporting income for FY 2027-28?"
+    tax_year: 2027
+    expected_acts: [ITA-2025]
+    expected_sections: ["439"]
+    should_refuse: false
+    verify: true
+
+  # --- section-mapping: same law, different number -------------------------
+
+  - id: SM-01
+    category: section-mapping
+    question: "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?"
+    tax_year: null
+    expected_acts: [ITA-1961, ITA-2025]
+    expected_sections: ["80C", "123"]
+    should_refuse: false
+    verify: true
+
+  - id: SM-02
+    category: section-mapping
+    question: "Which provision of the 2025 Act replaces section 80D on health insurance premium?"
+    tax_year: null
+    expected_acts: [ITA-2025]
+    expected_sections: ["126"]
+    should_refuse: false
+    verify: true
+
+  - id: SM-03
+    category: section-mapping
+    question: "Where is the deduction for rent paid found in the 2025 Act, previously section 80GG?"
+    tax_year: null
+    # The question names 80GG, so citing it is right, not a wrong-Act error.
+    # act_correct requires every cited Act to be expected; the first baseline
+    # failed this question for quoting the section it was asked about.
+    expected_acts: [ITA-2025, ITA-1961]
+    expected_sections: ["134"]
+    should_refuse: false
+    verify: true
+
+  - id: SM-04
+    category: section-mapping
+    question: "Which section of the 2025 Act covers deduction for contributions to the pension scheme of the Central Government?"
+    tax_year: 2027
+    expected_acts: [ITA-2025]
+    expected_sections: ["124"]
+    should_refuse: false
+    verify: false
+
+  - id: SM-05
+    category: section-mapping
+    question: "Interest for default in furnishing a return was section 234A in the 1961 Act. What is it in the 2025 Act?"
+    tax_year: null
+    # As SM-03: 234A is named in the question, so citing it is correct.
+    expected_acts: [ITA-2025, ITA-1961]
+    expected_sections: ["423"]
+    should_refuse: false
+    verify: true
+
+  - id: SM-06
+    category: section-mapping
+    question: "What is section 139 about?"
+    tax_year: null
+    expected_acts: [ITA-1961, ITA-2025]
+    expected_sections: ["139"]
+    should_refuse: false
+    verify: true
+    note: >
+      Deliberately ambiguous. s.139 is Return of income in 1961 and
+      Deductions for undertakings in 2025. A good answer names both, or asks
+      which year. A bad one silently picks.
+
+  # --- procedural: answered by departmental guidance, not statute ----------
+
+  - id: PR-01
+    category: procedural
+    question: "Which ITR form should a salaried individual file?"
+    tax_year: null
+    expected_acts: [DEPT-GUIDANCE]
+    expected_sections: []
+    answer_contains: ["ITR-1"]
+    should_refuse: false
+    verify: false
+
+  - id: PR-02
+    category: procedural
+    question: "Who cannot file ITR-1 Sahaj?"
+    tax_year: null
+    expected_acts: [DEPT-GUIDANCE]
+    expected_sections: []
+    should_refuse: false
+    verify: false
+
+  - id: PR-03
+    category: procedural
+    question: "Which ITR form applies to an individual with capital gains income?"
+    tax_year: null
+    expected_acts: [DEPT-GUIDANCE]
+    expected_sections: []
+    answer_contains: ["ITR-2"]
+    should_refuse: false
+    verify: true
+
+  - id: PR-04
+    category: procedural
+    question: "What are the income tax slab rates under the new tax regime for a salaried individual?"
+    tax_year: null
+    expected_acts: [DEPT-GUIDANCE]
+    expected_sections: []
+    answer_contains: ["%"]
+    should_refuse: false
+    verify: false
+
+  - id: PR-05
+    category: procedural
+    question: "Is the new tax regime the default regime, and can a taxpayer opt out?"
+    tax_year: null
+    expected_acts: [DEPT-GUIDANCE]
+    expected_sections: []
+    # Was ["115BAC"], which actively rewarded bad behaviour: that section
+    # is NOT in the corpus, so the only way to satisfy it was to cite a
+    # provision the model was never given. PR-04 did exactly that and PR-05,
+    # which stayed grounded, was marked down for it.
+    should_refuse: false
+    verify: false
+
+  - id: PR-06
+    category: procedural
+    question: "Which return form applies to a company?"
+    tax_year: null
+    expected_acts: [DEPT-GUIDANCE]
+    expected_sections: []
+    should_refuse: false
+    verify: true
+
+  # --- synthesis: needs two or more provisions ----------------------------
+
+  - id: SY-01
+    category: synthesis
+    question: "What deductions can a salaried individual claim for life insurance, health insurance and rent paid under the 1961 Act?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["80C", "80D", "80GG"]
+    should_refuse: false
+    verify: false
+
+  - id: SY-02
+    category: synthesis
+    question: "Under the 2025 Act, what deductions exist for life insurance premium and for health insurance premium?"
+    tax_year: 2027
+    expected_acts: [ITA-2025]
+    expected_sections: ["123", "126"]
+    should_refuse: false
+    verify: false
+
+  - id: SY-03
+    category: synthesis
+    question: "How is income from house property computed and what deductions apply, under the 1961 Act?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["22", "23", "24"]
+    should_refuse: false
+    verify: true
+
+  - id: SY-04
+    category: synthesis
+    question: "What is the deduction for life insurance premium and which schedule lists the qualifying sums, under the 2025 Act?"
+    tax_year: 2027
+    expected_acts: [ITA-2025]
+    expected_sections: ["123", "SCH-XV"]
+    should_refuse: false
+    verify: false
+
+  - id: SY-05
+    category: synthesis
+    question: "What deductions are available for pension contributions and for health insurance under the 1961 Act?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["80CCD", "80D"]
+    should_refuse: false
+    verify: false
+
+  - id: SY-06
+    category: synthesis
+    question: "Which ITR form applies to a salaried individual, and what deduction can they claim for life insurance premium?"
+    tax_year: null
+    # tax_year is null, so the filter excludes neither Act and citing the
+    # 2025 life-insurance provision alongside 80C is not an error.
+    expected_acts: [DEPT-GUIDANCE, ITA-1961, ITA-2025]
+    # tax_year is null, so neither Act is excluded and the 2025 equivalent
+    # of 80C answers the life-insurance half just as well. Expecting only
+    # 80C failed runs that cited s.123.
+    expected_sections: ["80C", "123"]
+    should_refuse: false
+    verify: true
+    note: Spans guidance and statute in one answer.
+
+  - id: SY-07
+    category: synthesis
+    question: "What interest and what penalty apply if a return is filed late and income is under-reported, under the 1961 Act?"
+    tax_year: 2024
+    expected_acts: [ITA-1961]
+    expected_sections: ["234A", "270A"]
+    should_refuse: false
+    verify: true
+
+  # --- out-of-corpus: must refuse -----------------------------------------
+
+  - id: OC-01
+    category: out-of-corpus
+    question: "What is the GST rate on restaurant services?"
+    tax_year: null
+    expected_acts: []
+    expected_sections: []
+    should_refuse: true
+    verify: false
+    note: Different tax entirely; not in the corpus.
+
+  - id: OC-02
+    category: out-of-corpus
+    question: "Given my salary of 35 lakh, should I choose the old or the new tax regime?"
+    tax_year: null
+    expected_acts: []
+    expected_sections: []
+    should_refuse: true
+    verify: false
+    note: >
+      Personalised advice. Must decline under prompt rule 3 even though the
+      slab rates are now in the corpus.
+
+  - id: OC-03
+    category: out-of-corpus
+    question: "What is the best mutual fund to invest in for tax saving?"
+    tax_year: null
+    expected_acts: []
+    expected_sections: []
+    should_refuse: true
+    verify: false
+
+  - id: OC-04
+    category: out-of-corpus
+    question: "What was the stamp duty rate in Maharashtra in 2019?"
+    tax_year: null
+    expected_acts: []
+    expected_sections: []
+    should_refuse: true
+    verify: false
+
+  - id: OC-05
+    category: out-of-corpus
+    question: "How do I register a private limited company?"
+    tax_year: null
+    expected_acts: []
+    expected_sections: []
+    should_refuse: true
+    verify: false

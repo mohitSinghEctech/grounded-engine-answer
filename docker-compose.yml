@@ -1,0 +1,69 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.16.1
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  llm-gateway:
+    build: ./services/llm-gateway
+    image: llm-gateway:dev
+    env_file:
+      - ./services/llm-gateway/.env
+    environment:
+      ENVIRONMENT: development
+      LOG_LEVEL: INFO
+      # Gemini flash currently returns in 6-21s for these prompts, so 30s
+      # timed out roughly a third of calls. Each layer must allow more than
+      # the one below it or the outer layer gives up first and reports a
+      # timeout from the wrong place: model 60 < gateway 75 < harness 90.
+      REQUEST_TIMEOUT_SECONDS: 60
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  tax-agent:
+    build: ./services/tax-agent
+    image: tax-agent:dev
+    env_file:
+      - ./services/tax-agent/.env
+    environment:
+      LLM_GATEWAY_URL: http://llm-gateway:8000
+      QDRANT_URL: http://qdrant:6333
+      ENVIRONMENT: development
+      # Headroom over the gateway's own 60s upstream timeout, so a slow
+      # model surfaces as GATEWAY_TIMEOUT from the layer that actually
+      # waited rather than as a race between the two.
+      LLM_GATEWAY_TIMEOUT_SECONDS: 75
+      # Which orchestrator runs /ask. "linear" is the straight line in
+      # routers/ask.py; "graph" is the LangGraph graph in app/graph/. Both
+      # call the same stages, so switching changes the route through the
+      # pipeline and nothing else - which is what makes an A/B eval
+      # meaningful. Set on the command line: PIPELINE=graph make restart
+      PIPELINE: ${PIPELINE:-linear}
+      # The two conditional branches only the graph can take. One at a
+      # time, each with its own eval run, or neither change is attributable.
+      GRAPH_WIDEN_ON_THIN_RETRIEVAL: ${GRAPH_WIDEN_ON_THIN_RETRIEVAL:-false}
+      GRAPH_RETRY_ON_FABRICATION: ${GRAPH_RETRY_ON_FABRICATION:-false}
+      # Comparison questions go to the tool-calling agent instead of the
+      # straight pipeline. Costs ~3x the tokens on the questions it fires
+      # for, so it is off until its own eval run says it earns that.
+      GRAPH_AGENT_ON_COMPARISON: ${GRAPH_AGENT_ON_COMPARISON:-false}
+      # "*" so web/index.html works opened straight from disk - a file://
+      # page sends `Origin: null`, which no named origin matches. Local
+      # development only; a deployed service should name its real origin.
+      CORS_ALLOW_ORIGINS: "*"
+    ports:
+      - "8080:8080"
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:

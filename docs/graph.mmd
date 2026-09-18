@@ -1,0 +1,41 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	resolve(resolve)
+	agent(agent)
+	refuse_stopped(refuse_stopped)
+	retrieve(retrieve)
+	widen(widen)
+	prompt(prompt)
+	retry_prompt(retry_prompt)
+	generate(generate)
+	verify(verify)
+	refuse_empty(refuse_empty)
+	finalise(finalise)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> resolve;
+	agent -. &nbsp;refuse&nbsp; .-> refuse_stopped;
+	agent -.-> verify;
+	generate --> verify;
+	prompt --> generate;
+	resolve -.-> agent;
+	resolve -. &nbsp;pipeline&nbsp; .-> retrieve;
+	retrieve -. &nbsp;answer&nbsp; .-> prompt;
+	retrieve -. &nbsp;refuse&nbsp; .-> refuse_empty;
+	retrieve -.-> widen;
+	retry_prompt --> generate;
+	verify -. &nbsp;accept&nbsp; .-> finalise;
+	verify -. &nbsp;retry&nbsp; .-> retry_prompt;
+	widen -. &nbsp;answer&nbsp; .-> prompt;
+	widen -. &nbsp;refuse&nbsp; .-> refuse_empty;
+	finalise --> __end__;
+	refuse_empty --> __end__;
+	refuse_stopped --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
+
