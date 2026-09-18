@@ -388,9 +388,34 @@ async def test_map_section_returns_the_counterpart_when_the_corpus_knows_it():
 
 
 @sync
+async def test_map_section_maps_1961_to_2025_as_well():
+    """The direction every eval question actually asks.
+
+    "Section 80C corresponds to which section of the 2025 Act?" starts at
+    a 1961 section, and the first version of this tool answered every
+    mapping with act="ITA-1961" - correct only for the direction no
+    question asks. The test above passed throughout, because it only ever
+    went 2025 -> 1961.
+    """
+    box = ToolBox(
+        retriever=StubRetriever(
+            [passage(section="80C", act="ITA-1961", maps_to="123")]
+        ),
+        top_k=6,
+        progress=Recorder(),
+    )
+
+    result = await box.run("map_section", {"section_number": "80C"})
+
+    assert result["found"] is True
+    assert result["from"] == {"act": "ITA-1961", "section": "80C"}
+    assert result["to"] == {"act": "ITA-2025", "section": "123"}
+
+
+@sync
 async def test_map_section_tells_the_model_not_to_guess():
-    """maps_to_1961 is populated for a handful of sections, so this is the
-    common case - and the note is what stops it inventing a number."""
+    """maps_to is populated for most but not all sections, so this stays a
+    real case - and the note is what stops it inventing a number."""
     box = ToolBox(
         retriever=StubRetriever([passage(section="19", act="ITA-2025")]),
         top_k=6,

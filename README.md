@@ -121,7 +121,7 @@ These are the ones worth engineering against — everything else flickers.
 
 | ID | Question | Fails | Cause |
 |---|---|---|---|
-| **SM-01** | "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?" | fixed on the agent branch, ~70–75% of the time | **corpus gap, not retrieval.** `maps_to_1961` was populated for 4 of 552 sections, so the mapping was not in the index. It is now **319 of 552**, filled by matching section titles across the two Acts (`make map-sections`) — pending a re-index and a re-measure. On the pipeline the model correctly refuses. On the agent branch it calls `map_section`, gets nothing, and searches the 2025 Act by subject instead — finding s.123. Eight live samples found it in six and declared `cannot_answer` in two, so **not deterministic**, and when it fails it fails after trying. |
+| **SM-01** | "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?" | fixed on the agent branch, ~70–75% of the time | **corpus gap, not retrieval.** `maps_to_1961` was populated for 4 of 552 sections, so the mapping was not in the index. It is now **319 forward and 306 reverse**, filled by matching section titles across the two Acts (`make map-sections`) — pending a re-measure. The reverse direction is the one this question needs, and the first attempt at this fix shipped without it. On the pipeline the model correctly refuses. On the agent branch it calls `map_section`, gets nothing, and searches the 2025 Act by subject instead — finding s.123. Eight live samples found it in six and declared `cannot_answer` in two, so **not deterministic**, and when it fails it fails after trying. |
 | **SM-02** | "Which provision of the 2025 Act replaces section 80D?" | same, finds s.126 | same gap, same recovery |
 | **PR-06** | "Which return form applies to a company?" | `act_correct`, `no_fabrication` | **a reproducible fabrication.** The departmental guidance pages were chunked as `company-ay1` and `company-ay2`; the model cites both, then extrapolates a third — `DEPT-GUIDANCE s.company-ay3` — which does not exist. Identical in all three runs, so this is the corpus's naming pattern inviting extrapolation, not sampling noise. The ids are now `company-domestic` and `company-foreign`, which carry no sequence to extrapolate — **not yet re-measured**. |
 
@@ -137,9 +137,26 @@ has been through three runs:
 | Change | What it targets | Why it should help |
 |---|---|---|
 | Guidance ids re-labelled `company-domestic` / `individual-salaried` | PR-06's reproducible fabrication | 7 of the 12 fabrications observed were the *next number in a shown sequence*. `-ay1`/`-ay2` in the prompt invite `-ay3`; names with no ordinal have nothing to extrapolate. (The old ids were also simply wrong: they were taxpayer categories, not assessment years.) |
-| `maps_to_1961` filled for 319 of 552 sections | SM-01, SM-02 | The mapping the question asks for is now in the index, so the agent can answer by *mapping* rather than by searching until the right section surfaces. |
+| Cross-Act mapping filled **in both directions** — 319 forward (2025→1961) and 306 reverse (1961→2025) | SM-01, SM-02, SM-03, SM-05 | The mapping the question asks for is now in the index *and traversable the way it is asked*, so the agent can answer by mapping rather than by searching until the right section surfaces. |
 | Retry fires on any nameable fabrication, not only an all-invented answer | the retry branch's 0-of-40 firing rate | The rule as written could not fire on the failure shape that actually occurs. |
 | Trajectory scoring (`agent_used`, `path_correct`, `no_redundant_calls`) | the measurement itself | Distinguishes a right answer reached the right way from a right answer reached by luck — and would have caught the router that matched none of its own four questions. |
+
+**The reverse mapping is worth its own note, because the first version of that
+fix did nothing.** `maps_to_1961` was filled for 319 sections and the smoke
+test still came back `found=false` on SM-01. The mapping is recorded on the
+*2025* section — 2025 s.123 points at 1961 s.80C — and every section-mapping
+question starts from the 1961 side and asks for the 2025 counterpart. So
+`map_section("80C")` looked up a 1961 row where nothing had been written, the
+agent fell back to searching, found s.123 anyway, and cited it in prose the
+citation check does not recognise: **a refusal on a question it had answered
+correctly.** The tool's own description said "Given a section of the 2025 Act",
+and its only test went 2025→1961, so nothing objected.
+
+The fix is a second column (`maps_to_2025` on the 1961 rows, the inverse), one
+neutral `maps_to` key in the payload, and a tool that reads the target Act off
+the section it found instead of hardcoding `ITA-1961`. Ambiguity is preserved
+rather than guessed: 6 sections of the 1961 Act are claimed by two 2025
+sections each and are left null.
 
 The first two need a re-index before they reach the Qdrant payload
 (`make index-standalone`, needs `EMBEDDING_API_KEY`); all four then need a

@@ -22,9 +22,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Both mapping directions: maps_to_1961 on the 2025 rows, maps_to_2025 on
+# the 1961 rows. An export that carried only the forward one would describe
+# a corpus the service does not see.
 COLUMNS = (
     "act, section_number, section_title, text, source_file, "
-    "page_start, page_end, maps_to_1961"
+    "page_start, page_end, maps_to_1961, maps_to_2025"
 )
 
 

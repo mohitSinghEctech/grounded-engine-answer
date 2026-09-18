@@ -161,7 +161,10 @@ def from_sections(db_path: Path, act: str) -> list[Chunk]:
                         "page_end": page_end,
                         "tax_year_from": year_from,
                         "tax_year_to": year_to,
-                        "maps_to_1961": maps_to,
+                        # Not "maps_to_1961": on an ITA-1961 chunk the
+                        # counterpart is a 2025 section, and a key that
+                        # names one direction cannot hold both.
+                        "maps_to": maps_to,
                         "text": body,
                     },
                 )

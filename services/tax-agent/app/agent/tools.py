@@ -37,6 +37,14 @@ GAVE_UP = "__gave_up__"
 
 ACTS = ("ITA-1961", "ITA-2025", "DEPT-GUIDANCE")
 
+#: The Act a cross-Act mapping points into. A section belongs to exactly
+#: one Act, so its counterpart is always in the other one - which is why
+#: the payload carries a single neutral `maps_to` and the direction is
+#: read off here instead of being hardcoded. It used to return "ITA-1961"
+#: for every mapping, which was right only for the direction that no eval
+#: question asks.
+OTHER_ACT = {"ITA-1961": "ITA-2025", "ITA-2025": "ITA-1961"}
+
 SCHEMAS: tuple[dict[str, Any], ...] = (
     {
         "type": "function",
@@ -101,12 +109,14 @@ SCHEMAS: tuple[dict[str, Any], ...] = (
         "function": {
             "name": "map_section",
             "description": (
-                "Given a section of the 2025 Act, find the corresponding "
-                "section of the 1961 Act. Use this when asked what changed "
-                "between the two Acts: map first, then get_section on both "
-                "numbers, then compare the texts. Returns found=false when "
-                "the corpus has no mapping for that section - then say so "
-                "rather than guessing a number."
+                "Given a section of either Act, find the corresponding "
+                "section of the other one - 1961 to 2025 or 2025 to 1961. "
+                "Use this whenever a question names a section in one Act "
+                "and asks for its counterpart, or what changed between the "
+                "two: map first, then get_section on both numbers, then "
+                "compare the texts. Returns found=false when the corpus "
+                "has no mapping for that section - then say so rather than "
+                "guessing a number."
             ),
             "parameters": {
                 "type": "object",
@@ -243,7 +253,10 @@ class ToolBox:
                 return {
                     "found": True,
                     "from": {"act": passage.act, "section": passage.section_number},
-                    "to": {"act": "ITA-1961", "section": passage.maps_to},
+                    "to": {
+                        "act": OTHER_ACT.get(passage.act, ""),
+                        "section": passage.maps_to,
+                    },
                 }
 
         return {

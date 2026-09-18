@@ -70,7 +70,7 @@ class GroundedRetriever:
             section_title=payload.get("section_title"),
             page_start=payload.get("page_start") or payload.get("page"),
             corpus_date=payload.get("corpus_date", "unknown"),
-            maps_to=payload.get("maps_to_1961"),
+            maps_to=payload.get("maps_to"),
         )
 
     def _cap_per_section(self, passages: list[Passage]) -> list[Passage]:

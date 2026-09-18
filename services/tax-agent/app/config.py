@@ -87,8 +87,12 @@ class Settings(BaseSettings):
     # Retrieved nothing under a tax-year filter: search again without it.
     graph_widen_on_thin_retrieval: bool = False
 
-    # Answer cited provisions and every one was invented: ask once more,
-    # naming them. Costs a second model call on the answers that trip it.
+    # Answer named a provision it was never given: ask once more, naming
+    # it. Costs a second model call on the answers that trip it.
+    #
+    # The condition used to be "and every citation was invented", which
+    # fired on zero of forty questions because every real fabrication is
+    # a mixed answer. Widened, and still unmeasured in that form.
     graph_retry_on_fabrication: bool = False
 
     # Send comparison questions down the agent path, where the model calls
