@@ -43,15 +43,22 @@ services:
       # call the same stages, so switching changes the route through the
       # pipeline and nothing else - which is what makes an A/B eval
       # meaningful. Set on the command line: PIPELINE=graph make restart
-      PIPELINE: ${PIPELINE:-linear}
-      # The two conditional branches only the graph can take. One at a
-      # time, each with its own eval run, or neither change is attributable.
+      PIPELINE: ${PIPELINE:-graph}
+      # The conditional branches only the graph can take. One at a time,
+      # each with its own eval run, or neither change is attributable.
+      #
+      # Widen: never measured, so off.
       GRAPH_WIDEN_ON_THIN_RETRIEVAL: ${GRAPH_WIDEN_ON_THIN_RETRIEVAL:-false}
+      # Retry: measured, and it removed every fabrication in three runs -
+      # but the ranges overlap so it did not reach REAL, and it converted
+      # one fabrication into a wrong refusal. Off until more runs, which is
+      # this project's own standard rather than a verdict on the idea.
       GRAPH_RETRY_ON_FABRICATION: ${GRAPH_RETRY_ON_FABRICATION:-false}
-      # Comparison questions go to the tool-calling agent instead of the
-      # straight pipeline. Costs ~3x the tokens on the questions it fires
-      # for, so it is off until its own eval run says it earns that.
-      GRAPH_AGENT_ON_COMPARISON: ${GRAPH_AGENT_ON_COMPARISON:-false}
+      # Cross-Act questions go to the tool-calling agent instead of the
+      # straight pipeline. ON: it earned it - +7% retrieval_hit, +6%
+      # grounded, +5% refused_correctly, all REAL, for +3% tokens because
+      # it fires on 4 of 40 questions.
+      GRAPH_AGENT_ON_COMPARISON: ${GRAPH_AGENT_ON_COMPARISON:-true}
       # "*" so web/index.html works opened straight from disk - a file://
       # page sends `Origin: null`, which no named origin matches. Local
       # development only; a deployed service should name its real origin.

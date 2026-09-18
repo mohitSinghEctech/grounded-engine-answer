@@ -54,6 +54,6 @@ def test_a_reference_written_in_words_is_still_a_citation():
         ("ITA-2025", "124")
     }
     assert extract_citations("see ITA-1961 s.80C") == {("ITA-1961", "80C")}
-    assert extract_citations("DEPT-GUIDANCE s.individual-ay3 says") == {
-        ("DEPT-GUIDANCE", "individual-ay3")
+    assert extract_citations("DEPT-GUIDANCE s.individual-salaried says") == {
+        ("DEPT-GUIDANCE", "individual-salaried")
     }

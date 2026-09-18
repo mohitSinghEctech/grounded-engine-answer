@@ -15,7 +15,7 @@ Rules:
 code and section exactly as they appear in the provision's heading:
    (ITA-2025 s.123)          a section of the 2025 Act
    (ITA-1961 s.80C)          a section of the 1961 Act
-   (DEPT-GUIDANCE s.individual-ay3)   a departmental guidance page
+   (DEPT-GUIDANCE s.individual-salaried)   a departmental guidance page
 Copy the act code character for character, and always use the "s." form: \
 write (ITA-2025 s.124), never "ITA-2025 section 124" or "section 124", \
 which do not count as citations. Never write a bracketed passage number \

@@ -42,10 +42,11 @@ The service is measured against a fixed set of **40 questions**
 (`eval/questions.yaml`) spanning seven categories: exact-fact, year-scoped,
 section-mapping, procedural, synthesis, out-of-corpus and prompt-resistance.
 
-Six signals are scored automatically. A seventh, `answer_correct`, is graded by
-hand, because an LLM judge would substitute its own error rate for the one being
-measured. Not-applicable cells are held as `None` rather than `False`, so a rate
-cannot be inflated by questions the signal does not apply to.
+Six signals score the **answer** automatically, three more score the **path**,
+and a tenth, `answer_correct`, is graded by hand, because an LLM judge would
+substitute its own error rate for the one being measured. Not-applicable cells
+are held as `None` rather than `False`, so a rate cannot be inflated by
+questions the signal does not apply to.
 
 | Signal | Baseline | Pipeline | Agent branch on | What it asks |
 |---|---|---|---|---|
@@ -56,6 +57,23 @@ cannot be inflated by questions the signal does not apply to.
 | `contains_expected` | 83% | 93% | 87% | the expected figure or phrase appears |
 | `no_fabrication` | n/a | 96% | 97% | no citation to a provision never supplied |
 | `answer_correct` | — | 34/40 (85%) | not re-graded | hand-graded against the corpus |
+
+Three further signals score how the answer was reached, on the four questions
+that declare an `expected_tools` path. They were added after the nine runs above
+and so have no figures yet:
+
+| Signal | What it asks |
+|---|---|
+| `agent_used` | did the router actually send this to the agent |
+| `path_correct` | did the expected tools run, in the expected order |
+| `no_redundant_calls` | did the model avoid repeating an identical call |
+
+These exist because output and path come apart. On SM-01 the agent reaches the
+right section either by mapping it or by searching until it surfaces; both score
+`retrieval_hit`, and only one of them is a working agent. `expected_tools` is
+matched as an ordered *subsequence*, so extra searches in between are the model
+working, not the model failing — but `map_section` before `get_section` is
+required, because the number the second call needs is what the first returns.
 
 Baseline is a single run; the other two columns are medians of three. Bold
 figures are the ones `compare.py` calls REAL — the ranges do not overlap.
@@ -90,7 +108,7 @@ group (`eval/measure-all.sh`).
 | Change | Verdict |
 |---|---|
 | **Pipeline rewritten as a LangGraph graph** | **parity.** Every signal within noise, which is what a change to orchestration alone should score. The graph was also steadier: `retrieval_hit` and `grounded` came back identical across all three runs where the linear path varied. |
-| **Retry when a citation is fabricated** | **no effect — and the rule is wrong.** The branch only fires when *every* citation is invented, and every real fabrication here is a *mixed* answer: three or four correct citations plus one invented. It fired on zero of forty questions. Retrying on any nameable fabrication is the version worth measuring. |
+| **Retry when a citation is fabricated** | **no effect — and the rule is wrong.** The branch only fires when *every* citation is invented, and every real fabrication here is a *mixed* answer: three or four correct citations plus one invented. It fired on zero of forty questions. The rule has since been changed to fire on any nameable fabrication; that version has **not** been measured. |
 | **Agent branch on cross-Act questions** | **+7% `retrieval_hit`, +6% `grounded`, +5% `refused_correctly`, all REAL.** SM-01 and SM-02 stopped failing. |
 
 The second row is the honest one: the measurement found a design flaw that
@@ -103,12 +121,111 @@ These are the ones worth engineering against — everything else flickers.
 
 | ID | Question | Fails | Cause |
 |---|---|---|---|
-| **SM-01** | "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?" | fixed on the agent branch, ~70–75% of the time | **corpus gap, not retrieval.** `maps_to_1961` is populated for 4 of 552 sections, so the mapping is not in the index. On the pipeline the model correctly refuses. On the agent branch it calls `map_section`, gets nothing, and searches the 2025 Act by subject instead — finding s.123. Eight live samples found it in six and declared `cannot_answer` in two, so **not deterministic**, and when it fails it fails after trying. |
+| **SM-01** | "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?" | fixed on the agent branch, ~70–75% of the time | **corpus gap, not retrieval.** `maps_to_1961` was populated for 4 of 552 sections, so the mapping was not in the index. It is now **319 forward and 306 reverse**, filled by matching section titles across the two Acts (`make map-sections`) — pending a re-measure. The reverse direction is the one this question needs, and the first attempt at this fix shipped without it. On the pipeline the model correctly refuses. On the agent branch it calls `map_section`, gets nothing, and searches the 2025 Act by subject instead — finding s.123. Eight live samples found it in six and declared `cannot_answer` in two, so **not deterministic**, and when it fails it fails after trying. |
 | **SM-02** | "Which provision of the 2025 Act replaces section 80D?" | same, finds s.126 | same gap, same recovery |
-| **PR-06** | "Which return form applies to a company?" | `act_correct`, `no_fabrication` | **a reproducible fabrication.** The departmental guidance pages are chunked as `company-ay1` and `company-ay2`; the model cites both, then extrapolates a third — `DEPT-GUIDANCE s.company-ay3` — which does not exist. Identical in all three runs, so this is the corpus's naming pattern inviting extrapolation, not sampling noise. |
+| **PR-06** | "Which return form applies to a company?" | `act_correct`, `no_fabrication` | **a reproducible fabrication.** The departmental guidance pages were chunked as `company-ay1` and `company-ay2`; the model cites both, then extrapolates a third — `DEPT-GUIDANCE s.company-ay3` — which does not exist. Identical in all three runs, so this is the corpus's naming pattern inviting extrapolation, not sampling noise. The ids are now `company-domestic` and `company-foreign`, which carry no sequence to extrapolate — **not yet re-measured**. |
 
 Three more fail intermittently and are treated as noise until they repeat:
 OC-05 (2 of 3 runs), PR-03 and YS-04 (1 of 3 each).
+
+### What the second six runs measured
+
+Two more groups of three (`eval/measure-fixes.sh`), against `g3-agent` as the
+baseline — the best configuration measured so far, so a change has to beat the
+agent branch rather than the linear pipeline.
+
+**g4 bundles three changes, and that is deliberate.** "The agent can answer a
+cross-Act mapping question with citations" needs the guidance re-label, the
+bidirectional mapping *and* the prompt that tells the agent to fetch the
+counterpart before citing it. Measured separately, the first two produce a
+half-built feature: with the mapping alone, SM-01 answered *"Section 80C
+corresponds to Section 123"* — right answer, cited in prose, scored as a
+refusal. The cost of bundling is that a move cannot be split between the
+corpus and the prompt; it can still be split by question, since the re-label
+targets PR-\* and the mapping targets SM-\*.
+
+| Signal | g3-agent | g4 (corpus + mapping + prompt) | g5 (+ corrected retry) |
+|---|---|---|---|
+| `retrieval_hit` | 100% | 99% | 100% |
+| `act_correct` | 95% | **97%** (see below) | **97%** (see below) |
+| `refused_correctly` | 98% | 98% | 97% |
+| `grounded` | 100% | 98% | 99% |
+| `no_fabrication` | 97% | 98% | **100%, stable** |
+| `agent_used` | — | 4/4 stable | 4/4 stable |
+| `path_correct` | — | 4/4 stable | 4/4 stable |
+| `no_redundant_calls` | — | 4/4 stable | 4/4 stable |
+
+**Not one output signal moved REAL, and the reason is headroom.** `g3-agent`
+was already at 100% `retrieval_hit` and 100% `grounded`. There was nothing left
+to win on the signals that matter most, so a fix aimed at *how* the answer is
+reached could not show up in *whether* it was reached.
+
+That mechanism is what the trajectory signals were added for, and they show it:
+across all six runs the four mapping questions called
+`map_section → get_section → get_section`, **4/4 stable**, where before they
+reached the same answers by searching until the right section surfaced. SM-01
+went from roughly 70–75% on live sampling to 6 of 6 runs on the intended path —
+better, but six runs is not proof of determinism.
+
+**`act_correct` was the one REAL move, and it was the eval set's fault.** It
+read −2%, entirely from SM-02 failing 3/3 because the agent now cites
+`ITA-1961 s.80D` *and* `ITA-2025 s.126`. SM-01, SM-03 and SM-05 all already
+declare both Acts, SM-03's comment explains why ("the question names 80GG, so
+citing it is right"), and SM-02 was simply missed. Corrected — after seeing it
+fail, which is worth stating plainly; the justification is consistency with
+three sibling questions, not the result — both groups score **97% against
+g3's 95%**, within noise but pointing the other way.
+
+**The guidance re-label worked, narrowly.** PR-06's `DEPT-GUIDANCE
+s.company-ay3` — the reproducible fabrication documented above — is gone in
+6 of 6 runs. Corpus-wide fabrication did not improve, because the re-label
+**moved** it rather than removing it. Two new shapes appeared:
+
+    DEPT-GUIDANCE s.individual-salaried-other-sources   a real page name,
+                                                        with a plausible
+                                                        suffix appended
+    ITA-2025 s.individual-salaried                      a guidance page id
+                                                        under an Act code
+
+So the lesson from the first nine runs holds in a sharper form: the model does
+not extrapolate *numbers*, it extrapolates *patterns*. Removing the ordinal
+removed one pattern and left the naming convention itself as another.
+
+**The corrected retry rule fires, and it trades fabrications for refusals.**
+`no_fabrication` went to 40/40 in all three g5 runs, against 95–100% in g4 —
+every fabrication observed was eliminated. `compare.py` still calls it *within
+noise*, correctly: the ranges overlap, and three runs cannot separate 98% from
+100%. The cost showed up too — on one run PR-03 came back
+`REFUSE: OUT_OF_SCOPE` with no citations, a fabrication converted into a wrong
+refusal, which is the exact risk `test_mixed_answer_stands_when_the_retry_does_not_fix_it`
+pins down. Tokens and latency were flat (≈119.7k against 119.9k per run),
+because the branch fires rarely.
+
+It is **off by default**, on the project's own standard: it did not reach REAL,
+and it has a demonstrated failure mode. Turning it on is a one-line flag and a
+defensible judgement — a refusal is honest where a fabricated citation is
+dangerous — but it is a judgement, not a measurement.
+
+### Shipped defaults
+
+`PIPELINE=graph` and `GRAPH_AGENT_ON_COMPARISON=true` are now the defaults: the
+graph reached parity across three runs and is steadier, and the agent branch
+earned +7% `retrieval_hit` / +6% `grounded` / +5% `refused_correctly`, all REAL,
+at +3% tokens on 4 of 40 questions. `GRAPH_WIDEN_ON_THIN_RETRIEVAL` and
+`GRAPH_RETRY_ON_FABRICATION` stay off — the first has never been measured, the
+second is described above.
+
+### Still not done
+
+- **`answer_correct` is still the Tier 0 grading** (34/40), from before any of
+  this. It is the least current number in this file and needs a `make grade`
+  pass.
+- **OC-05 fails every run** in g5 and 1–2 of 3 elsewhere — the only question
+  that now fails consistently.
+- **PR-06 still fails `act_correct`** 6/6, citing `ITA-1961 s.139` alongside
+  the two guidance pages. Whether that is wrong is a judgement about the
+  question, not a bug.
+- The `ita_naive` A/B has still never run.
 
 ### Known limitations
 

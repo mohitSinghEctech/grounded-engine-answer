@@ -18,6 +18,16 @@ AGENT     := services/tax-agent
 BUILDER   := corpus-builder
 
 # --- Corpus settings --------------------------------------------------------
+# The indexing scripts embed with the same OpenAI key the tax-agent uses at
+# query time, and it lives in that service's .env - which make does not read.
+# Without this, `make index-standalone` gets as far as deleting data/index
+# and then dies on "set EMBEDDING_API_KEY", which is how it was found.
+#
+# An already-exported value wins (?=), so a one-off key on the command line
+# still works. The shell runs once per make invocation, not once per target.
+EMBEDDING_API_KEY ?= $(shell sed -n 's/^EMBEDDING_API_KEY=//p' $(AGENT)/.env 2>/dev/null)
+export EMBEDDING_API_KEY
+
 DB         ?= data/corpus.db
 QDRANT     ?= http://localhost:6333
 COLLECTION ?= ita_sections
@@ -42,7 +52,7 @@ AGENT_ECR_URI  := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(AGENT_ECR
         aws-audit aws-spend ecr-login ecr-push ecr-push-agent ecr-images ecs-start ecs-stop ecs-status \
         manifest manifest-check health ask ask-stream api-search index-guidance reindex corpus-export \
         eval eval-smoke eval-baseline grade grade-summary \
-        graph-on graph-off graph-which graph-draw graph-mermaid
+        graph-on graph-off graph-which graph-draw graph-mermaid map-sections
 
 help: ## Show this help
 	@echo "Grounded Answer Engine"
@@ -128,7 +138,14 @@ index-naive: ## Build the naive baseline collection, for A/B comparison
 
 INDEX_PATH ?= data/index
 
+map-sections: ## Populate maps_to_1961 by matching titles across the Acts
+	$(PY) $(BUILDER)/scripts/map_sections.py --db $(DB) --write
+
 index-standalone: ## Build a COMPLETE on-disk index for the self-contained image
+	@test -n "$(EMBEDDING_API_KEY)" || \
+		{ echo "EMBEDDING_API_KEY is empty - set it or put it in $(AGENT)/.env."; \
+		  echo "Refusing to delete $(INDEX_PATH) for a build that cannot finish."; \
+		  exit 1; }
 	@rm -rf $(INDEX_PATH)
 	$(PY) $(BUILDER)/scripts/index.py --strategy sections --db $(DB) --act ITA-2025 \
 		--qdrant $(INDEX_PATH) --collection $(COLLECTION)

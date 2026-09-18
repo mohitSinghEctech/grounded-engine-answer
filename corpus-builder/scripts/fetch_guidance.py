@@ -45,17 +45,32 @@ DELAY_SECONDS = 1.5
 #: with no usable text, so only the return-applicable pages are listed.
 #: Curated seeds. Each covers one taxpayer category's returns, deductions
 #: and slabs - the three things the Acts do not spell out.
+# The key is not only a filename. chunking.py uses it verbatim as the
+# citable section_number, so the model reads it and writes it back - which
+# makes this dict prompt surface, not bookkeeping.
+#
+# The first version numbered them in scrape order: individual-ay1, ay2,
+# ay3, company-ay1, ay2. Across nine eval runs the model invented
+# company-ay3, individual-ay4, ay5 and ay6 - seven of twelve fabrications
+# were just the next number in a sequence it had been shown. The two keys
+# carrying no number, individual-business and dos-and-donts, were never
+# extrapolated from once.
+#
+# An earlier comment here claimed the portal's -0/-1 suffixes were
+# different assessment years. They are not: each page covers a different
+# TAXPAYER CATEGORY and every one of them states AY 2026-27. That mistaken
+# reading is how the numbering got in. The keys below say what each page is
+# actually about, so there is no sequence left to extend and a citation
+# tells a reader which page it came from.
 PAGES: dict[str, str] = {
     # Returns, deductions and slabs per taxpayer category. Verified against
     # the portal's own help index; paths without a category prefix 404.
-    # The -0/-1 suffixes are different assessment years; each page states
-    # which AY it covers in its own heading.
-    "individual-ay1": "/iec/foportal/help/individual/return-applicable",
-    "individual-ay2": "/iec/foportal/help/individual/return-applicable-0",
-    "individual-ay3": "/iec/foportal/help/individual/return-applicable-1",
+    "individual-overview": "/iec/foportal/help/individual/return-applicable",
+    "individual-non-resident": "/iec/foportal/help/individual/return-applicable-0",
+    "individual-salaried": "/iec/foportal/help/individual/return-applicable-1",
     "individual-business": "/iec/foportal/help/individual-business-profession",
-    "company-ay1": "/iec/foportal/help/company/return-applicable",
-    "company-ay2": "/iec/foportal/help/company/return-applicable-0",
+    "company-domestic": "/iec/foportal/help/company/return-applicable",
+    "company-foreign": "/iec/foportal/help/company/return-applicable-0",
     "dos-and-donts": "/iec/foportal/help/all-topics/dosndont",
 }
 

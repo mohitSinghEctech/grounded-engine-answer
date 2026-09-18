@@ -98,11 +98,33 @@ class Verification:
     def fabricated_only(self) -> bool:
         """Cited provisions, and every one of them was invented.
 
-        The case worth a second attempt: the model was willing to answer
-        and had the provisions in front of it, but referenced something it
-        was never given.
+        The first retry condition, and it was wrong. Kept because it
+        describes a real state worth logging - it just never happens here.
         """
         return bool(self.unsupported) and not self.cited
+
+    @property
+    def has_fabrication(self) -> bool:
+        """Any citation the model was never given, nameable in a retry.
+
+        This is the retry condition, and it replaced `fabricated_only`
+        because nine eval runs said so. That rule fired only when EVERY
+        citation was invented, and all twelve fabrications observed were
+        mixed answers - three or four correct citations plus one invented:
+
+            PR-01  invented ITA-1961 s.192       + 3 real
+            PR-03  invented ITA-1961 s.112A      + 3 real
+            PR-05  invented ITA-1961 s.139       + 1 real
+            PR-06  invented DEPT-GUIDANCE s.company-ay3 + 3 real
+
+        So the branch fired on zero of forty questions, three unit tests
+        passed, and a live demo worked. Only the measurement found it.
+
+        A mixed answer is the more dangerous shape anyway: mostly right,
+        with one reference that does not exist, which reads as more
+        credible rather than less.
+        """
+        return bool(self.unsupported)
 
 
 def resolve_tax_year(request: AskRequest) -> YearResolution:

@@ -77,7 +77,13 @@ class Settings(BaseSettings):
     # branch flags below off they do identical work. Kept switchable so the
     # eval harness can score one against the other instead of the change
     # being taken on trust.
-    pipeline: Literal["linear", "graph"] = "linear"
+    # Default "graph" since the parity measurement: three runs of every
+    # signal within noise against the linear path, and steadier -
+    # retrieval_hit and grounded came back identical across all three runs
+    # where linear varied. "linear" is kept because it is the thing parity
+    # is measured against, and a claim of parity with no way to re-check it
+    # is just a claim.
+    pipeline: Literal["linear", "graph"] = "graph"
 
     # The two conditional branches only the graph can take. Off by default:
     # each is a behaviour change that has to earn its place in its own eval
@@ -87,15 +93,25 @@ class Settings(BaseSettings):
     # Retrieved nothing under a tax-year filter: search again without it.
     graph_widen_on_thin_retrieval: bool = False
 
-    # Answer cited provisions and every one was invented: ask once more,
-    # naming them. Costs a second model call on the answers that trip it.
+    # Answer named a provision it was never given: ask once more, naming
+    # it. Costs a second model call on the answers that trip it.
+    #
+    # The condition used to be "and every citation was invented", which
+    # fired on zero of forty questions because every real fabrication is
+    # a mixed answer. Widened, and still unmeasured in that form.
     graph_retry_on_fabrication: bool = False
 
-    # Send comparison questions down the agent path, where the model calls
-    # tools itself. Off by default: it is a behaviour change and costs
-    # roughly 3x the tokens on the questions it fires for, so it has to
-    # earn that in its own eval run.
-    graph_agent_on_comparison: bool = False
+    # Send cross-Act questions down the agent path, where the model calls
+    # tools itself. It had to earn this in its own eval run, and did:
+    # +7% retrieval_hit, +6% grounded, +5% refused_correctly, all REAL,
+    # for +3% tokens over the whole run because it fires on 4 of 40
+    # questions. Six later runs then showed it taking the intended
+    # map -> get -> get path 4/4, stable.
+    #
+    # The cost is real but narrow: those four questions go from ~2.1s to
+    # ~6.5s and about 3 model calls each. That is the argument for routing
+    # narrowly rather than making everything an agent.
+    graph_agent_on_comparison: bool = True
 
     # The agent's two bounds. Neither depends on the model behaving: it
     # stops at whichever it reaches first.

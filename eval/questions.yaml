@@ -5,6 +5,14 @@
 #
 # tax_year is the STARTING year of the financial year: FY 2026-27 -> 2026.
 # The 1961 Act governs through 2025; the 2025 Act from 2026.
+#
+# expected_tools names the path the tool-calling agent must take, as an
+# ORDERED SUBSEQUENCE of the tools it actually called - extra searches in
+# between are fine, the order is not. It belongs on exactly the questions
+# the agent router fires on, and a test in the tax-agent suite asserts
+# that those two sets are identical: the first version of that router
+# matched none of these four, and nothing caught it because the tests and
+# the router were written from the same guess.
 
 meta:
   version: 1
@@ -175,6 +183,11 @@ questions:
     tax_year: null
     expected_acts: [ITA-1961, ITA-2025]
     expected_sections: ["80C", "123"]
+    # Two hops, and the second cannot be formed until the first returns:
+    # map_section gives back a NUMBER only, so the text has to be fetched
+    # before anything can be cited. That dependency is the whole reason
+    # this question gets an agent instead of one retrieval pass.
+    expected_tools: [map_section, get_section]
     should_refuse: false
     verify: true
 
@@ -182,8 +195,22 @@ questions:
     category: section-mapping
     question: "Which provision of the 2025 Act replaces section 80D on health insurance premium?"
     tax_year: null
-    expected_acts: [ITA-2025]
+    # As SM-03 and SM-05: the question names 80D, so citing it is right.
+    # ITA-1961 was missing here while its three siblings all had it, and
+    # the gap only showed once the agent started fetching BOTH sections
+    # before citing - correct behaviour, scored as a wrong-Act error 3/3.
+    #
+    # Changed after seeing it fail, which is worth stating plainly. The
+    # justification is consistency, not the result: SM-01, SM-03 and SM-05
+    # already encode "the section named in the question may be cited",
+    # SM-03's comment says why, and this question is the same shape.
+    expected_acts: [ITA-2025, ITA-1961]
     expected_sections: ["126"]
+    # Two hops, and the second cannot be formed until the first returns:
+    # map_section gives back a NUMBER only, so the text has to be fetched
+    # before anything can be cited. That dependency is the whole reason
+    # this question gets an agent instead of one retrieval pass.
+    expected_tools: [map_section, get_section]
     should_refuse: false
     verify: true
 
@@ -196,6 +223,11 @@ questions:
     # failed this question for quoting the section it was asked about.
     expected_acts: [ITA-2025, ITA-1961]
     expected_sections: ["134"]
+    # Two hops, and the second cannot be formed until the first returns:
+    # map_section gives back a NUMBER only, so the text has to be fetched
+    # before anything can be cited. That dependency is the whole reason
+    # this question gets an agent instead of one retrieval pass.
+    expected_tools: [map_section, get_section]
     should_refuse: false
     verify: true
 
@@ -215,6 +247,11 @@ questions:
     # As SM-03: 234A is named in the question, so citing it is correct.
     expected_acts: [ITA-2025, ITA-1961]
     expected_sections: ["423"]
+    # Two hops, and the second cannot be formed until the first returns:
+    # map_section gives back a NUMBER only, so the text has to be fetched
+    # before anything can be cited. That dependency is the whole reason
+    # this question gets an agent instead of one retrieval pass.
+    expected_tools: [map_section, get_section]
     should_refuse: false
     verify: true
 
