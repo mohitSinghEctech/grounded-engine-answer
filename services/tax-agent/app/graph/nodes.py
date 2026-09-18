@@ -213,18 +213,22 @@ def route_after_widen(state: AskState) -> str:
 def route_after_verification(state: AskState) -> str:
     """Accept the answer, or give the model one more attempt.
 
-    Only one case earns a retry: the model cited provisions and every one
-    was invented. It was willing to answer and had the material in front
-    of it, so the fault is in the citing, which is the thing a corrected
-    prompt can actually fix. An answer that cites nothing is a retrieval
-    problem and re-asking will not help; an answer with any real citation
-    is already grounded.
+    Retry when the answer names a provision it was never given - whether
+    or not it also cited real ones. The first version of this rule
+    required ALL citations to be invented, which sounded principled and
+    fired on zero of forty questions, because every real fabrication is a
+    mixed answer. See `Verification.has_fabrication`.
+
+    The cost of the wider rule is a second model call on an answer that
+    may already be largely correct, and the risk is that the retry loses a
+    good citation while fixing a bad one. Which is why it is behind a flag
+    and gets its own eval group rather than being assumed to help.
     """
     verification = state["verification"]
 
     retry_allowed = (
         state["context"].settings.graph_retry_on_fabrication
-        and verification.fabricated_only
+        and verification.has_fabrication
         # The bound. Without it a model that fabricates every time loops
         # until something else kills the request.
         and state.get("attempts", 0) < 2

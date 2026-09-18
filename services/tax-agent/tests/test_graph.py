@@ -12,6 +12,7 @@ graph loop.
 
 import asyncio
 import functools
+from pathlib import Path
 
 import pytest
 
@@ -368,8 +369,41 @@ async def test_retry_gives_up_after_one_extra_attempt():
 
 
 @sync
-async def test_retry_does_not_fire_when_one_citation_held_up():
-    """Partly fabricated is still grounded, and re-asking risks the good part."""
+async def test_retry_fires_on_a_mixed_answer():
+    """Real citations plus one invented - the shape the first rule missed.
+
+    This test is the inverse of the one it replaces. The old rule held
+    that a partly fabricated answer is still grounded and re-asking risks
+    the good part, so it did nothing; the eval then showed that ALL
+    twelve fabrications are this shape, so the branch never ran at all.
+    Nothing is left to trade off against zero coverage.
+    """
+    gateway = ScriptedGateway(
+        "Premium (ITA-1961 s.80D), see also ITA-1961 s.99Z.",  # mixed
+        "Premium (ITA-1961 s.80D).",  # corrected
+    )
+
+    response = await run_graph_pipeline(
+        AskRequest(question="80D?"),
+        ScriptedRetriever([passage()]),
+        gateway,
+        make_settings(graph_retry_on_fabrication=True),
+    )
+
+    assert len(gateway.prompts) == 2
+    assert "ITA-1961 s.99Z" in gateway.prompts[1]
+    assert response.unsupported_citations == []
+    assert [c.section_number for c in response.citations] == ["80D"]
+
+
+@sync
+async def test_mixed_answer_stands_when_the_retry_does_not_fix_it():
+    """The named risk of the wider rule, pinned down.
+
+    A retry that fabricates again must not cost the answer its real
+    citation: the second attempt is accepted as grounded, with the
+    invented reference still reported to the caller rather than hidden.
+    """
     gateway = ScriptedGateway("Premium (ITA-1961 s.80D), see also ITA-1961 s.99Z.")
 
     response = await run_graph_pipeline(
@@ -379,9 +413,10 @@ async def test_retry_does_not_fire_when_one_citation_held_up():
         make_settings(graph_retry_on_fabrication=True),
     )
 
-    assert len(gateway.prompts) == 1
+    assert len(gateway.prompts) == 2
     assert response.refusal_reason == "none"
     assert response.unsupported_citations == ["ITA-1961 s.99Z"]
+    assert [c.section_number for c in response.citations] == ["80D"]
 
 
 @sync
@@ -435,7 +470,7 @@ def test_note_lands_before_the_answer_cue():
     assert prompt.endswith("Answer:")
 
 
-def test_fabricated_only_distinguishes_the_retryable_case():
+def test_has_fabrication_covers_the_mixed_case_that_fabricated_only_missed():
     both = steps.Verification(
         declared=None,
         answer_text="x",
@@ -449,9 +484,15 @@ def test_fabricated_only_distinguishes_the_retryable_case():
         declared=None, answer_text="x", cited=[], unsupported=set()
     )
 
+    # The old rule: only an all-invented answer. Zero of forty questions.
     assert not both.fabricated_only
     assert invented_only.fabricated_only
     assert not nothing.fabricated_only
+
+    # The rule in force: any invented reference, mixed or not.
+    assert both.has_fabrication
+    assert invented_only.has_fabrication
+    assert not nothing.has_fabrication
 
 
 # --------------------------------------------------------------------------
@@ -591,6 +632,42 @@ async def test_an_uncited_agent_answer_is_still_caught():
     )
 
     assert response.refusal_reason == "not_grounded"
+
+
+def test_the_router_agrees_with_the_eval_set():
+    """The invariant, read off the file rather than copied out of it.
+
+    A question carries `expected_tools` if and only if the router sends it
+    to the agent. Either half breaking is a real defect: a question with a
+    declared path that never reaches the agent scores agent_used=False
+    forever, and a question that reaches the agent without one is running
+    at triple cost with its trajectory unscored.
+
+    This reads eval/questions.yaml directly, because the test below it
+    copies the phrasings in, and a copy is exactly what went stale the
+    first time. Skipped inside the service container, which ships without
+    the eval set.
+    """
+    import yaml
+
+    from app.pipeline.steps import wants_agent
+
+    path = Path(__file__).resolve().parents[3] / "eval" / "questions.yaml"
+
+    if not path.exists():
+        pytest.skip("eval set not present (running inside the service image)")
+
+    questions = yaml.safe_load(path.read_text())["questions"]
+
+    declared = {q["id"] for q in questions if q.get("expected_tools")}
+    routed = {q["id"] for q in questions if wants_agent(q["question"])}
+
+    assert declared == routed, (
+        f"declared but not routed: {sorted(declared - routed)}; "
+        f"routed but not declared: {sorted(routed - declared)}"
+    )
+    # Not an empty-set tautology: the branch exists for these four.
+    assert len(routed) == 4
 
 
 def test_the_router_fires_on_the_real_eval_questions():

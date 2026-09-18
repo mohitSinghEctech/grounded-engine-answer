@@ -42,10 +42,11 @@ The service is measured against a fixed set of **40 questions**
 (`eval/questions.yaml`) spanning seven categories: exact-fact, year-scoped,
 section-mapping, procedural, synthesis, out-of-corpus and prompt-resistance.
 
-Six signals are scored automatically. A seventh, `answer_correct`, is graded by
-hand, because an LLM judge would substitute its own error rate for the one being
-measured. Not-applicable cells are held as `None` rather than `False`, so a rate
-cannot be inflated by questions the signal does not apply to.
+Six signals score the **answer** automatically, three more score the **path**,
+and a tenth, `answer_correct`, is graded by hand, because an LLM judge would
+substitute its own error rate for the one being measured. Not-applicable cells
+are held as `None` rather than `False`, so a rate cannot be inflated by
+questions the signal does not apply to.
 
 | Signal | Baseline | Pipeline | Agent branch on | What it asks |
 |---|---|---|---|---|
@@ -56,6 +57,23 @@ cannot be inflated by questions the signal does not apply to.
 | `contains_expected` | 83% | 93% | 87% | the expected figure or phrase appears |
 | `no_fabrication` | n/a | 96% | 97% | no citation to a provision never supplied |
 | `answer_correct` | — | 34/40 (85%) | not re-graded | hand-graded against the corpus |
+
+Three further signals score how the answer was reached, on the four questions
+that declare an `expected_tools` path. They were added after the nine runs above
+and so have no figures yet:
+
+| Signal | What it asks |
+|---|---|
+| `agent_used` | did the router actually send this to the agent |
+| `path_correct` | did the expected tools run, in the expected order |
+| `no_redundant_calls` | did the model avoid repeating an identical call |
+
+These exist because output and path come apart. On SM-01 the agent reaches the
+right section either by mapping it or by searching until it surfaces; both score
+`retrieval_hit`, and only one of them is a working agent. `expected_tools` is
+matched as an ordered *subsequence*, so extra searches in between are the model
+working, not the model failing — but `map_section` before `get_section` is
+required, because the number the second call needs is what the first returns.
 
 Baseline is a single run; the other two columns are medians of three. Bold
 figures are the ones `compare.py` calls REAL — the ranges do not overlap.
@@ -90,7 +108,7 @@ group (`eval/measure-all.sh`).
 | Change | Verdict |
 |---|---|
 | **Pipeline rewritten as a LangGraph graph** | **parity.** Every signal within noise, which is what a change to orchestration alone should score. The graph was also steadier: `retrieval_hit` and `grounded` came back identical across all three runs where the linear path varied. |
-| **Retry when a citation is fabricated** | **no effect — and the rule is wrong.** The branch only fires when *every* citation is invented, and every real fabrication here is a *mixed* answer: three or four correct citations plus one invented. It fired on zero of forty questions. Retrying on any nameable fabrication is the version worth measuring. |
+| **Retry when a citation is fabricated** | **no effect — and the rule is wrong.** The branch only fires when *every* citation is invented, and every real fabrication here is a *mixed* answer: three or four correct citations plus one invented. It fired on zero of forty questions. The rule has since been changed to fire on any nameable fabrication; that version has **not** been measured. |
 | **Agent branch on cross-Act questions** | **+7% `retrieval_hit`, +6% `grounded`, +5% `refused_correctly`, all REAL.** SM-01 and SM-02 stopped failing. |
 
 The second row is the honest one: the measurement found a design flaw that
@@ -103,12 +121,30 @@ These are the ones worth engineering against — everything else flickers.
 
 | ID | Question | Fails | Cause |
 |---|---|---|---|
-| **SM-01** | "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?" | fixed on the agent branch, ~70–75% of the time | **corpus gap, not retrieval.** `maps_to_1961` is populated for 4 of 552 sections, so the mapping is not in the index. On the pipeline the model correctly refuses. On the agent branch it calls `map_section`, gets nothing, and searches the 2025 Act by subject instead — finding s.123. Eight live samples found it in six and declared `cannot_answer` in two, so **not deterministic**, and when it fails it fails after trying. |
+| **SM-01** | "Section 80C of the 1961 Act corresponds to which section of the 2025 Act?" | fixed on the agent branch, ~70–75% of the time | **corpus gap, not retrieval.** `maps_to_1961` was populated for 4 of 552 sections, so the mapping was not in the index. It is now **319 of 552**, filled by matching section titles across the two Acts (`make map-sections`) — pending a re-index and a re-measure. On the pipeline the model correctly refuses. On the agent branch it calls `map_section`, gets nothing, and searches the 2025 Act by subject instead — finding s.123. Eight live samples found it in six and declared `cannot_answer` in two, so **not deterministic**, and when it fails it fails after trying. |
 | **SM-02** | "Which provision of the 2025 Act replaces section 80D?" | same, finds s.126 | same gap, same recovery |
-| **PR-06** | "Which return form applies to a company?" | `act_correct`, `no_fabrication` | **a reproducible fabrication.** The departmental guidance pages are chunked as `company-ay1` and `company-ay2`; the model cites both, then extrapolates a third — `DEPT-GUIDANCE s.company-ay3` — which does not exist. Identical in all three runs, so this is the corpus's naming pattern inviting extrapolation, not sampling noise. |
+| **PR-06** | "Which return form applies to a company?" | `act_correct`, `no_fabrication` | **a reproducible fabrication.** The departmental guidance pages were chunked as `company-ay1` and `company-ay2`; the model cites both, then extrapolates a third — `DEPT-GUIDANCE s.company-ay3` — which does not exist. Identical in all three runs, so this is the corpus's naming pattern inviting extrapolation, not sampling noise. The ids are now `company-domestic` and `company-foreign`, which carry no sequence to extrapolate — **not yet re-measured**. |
 
 Three more fail intermittently and are treated as noise until they repeat:
 OC-05 (2 of 3 runs), PR-03 and YS-04 (1 of 3 each).
+
+### Changed since the last measurement
+
+Every figure above predates these four changes. They are listed separately
+rather than folded into the tables, because a change is not a result until it
+has been through three runs:
+
+| Change | What it targets | Why it should help |
+|---|---|---|
+| Guidance ids re-labelled `company-domestic` / `individual-salaried` | PR-06's reproducible fabrication | 7 of the 12 fabrications observed were the *next number in a shown sequence*. `-ay1`/`-ay2` in the prompt invite `-ay3`; names with no ordinal have nothing to extrapolate. (The old ids were also simply wrong: they were taxpayer categories, not assessment years.) |
+| `maps_to_1961` filled for 319 of 552 sections | SM-01, SM-02 | The mapping the question asks for is now in the index, so the agent can answer by *mapping* rather than by searching until the right section surfaces. |
+| Retry fires on any nameable fabrication, not only an all-invented answer | the retry branch's 0-of-40 firing rate | The rule as written could not fire on the failure shape that actually occurs. |
+| Trajectory scoring (`agent_used`, `path_correct`, `no_redundant_calls`) | the measurement itself | Distinguishes a right answer reached the right way from a right answer reached by luck — and would have caught the router that matched none of its own four questions. |
+
+The first two need a re-index before they reach the Qdrant payload
+(`make index-standalone`, needs `EMBEDDING_API_KEY`); all four then need a
+fresh group of three runs. `answer_correct` is also still the Tier 0 grading
+and needs a `make grade` pass.
 
 ### Known limitations
 

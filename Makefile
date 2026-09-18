@@ -42,7 +42,7 @@ AGENT_ECR_URI  := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(AGENT_ECR
         aws-audit aws-spend ecr-login ecr-push ecr-push-agent ecr-images ecs-start ecs-stop ecs-status \
         manifest manifest-check health ask ask-stream api-search index-guidance reindex corpus-export \
         eval eval-smoke eval-baseline grade grade-summary \
-        graph-on graph-off graph-which graph-draw graph-mermaid
+        graph-on graph-off graph-which graph-draw graph-mermaid map-sections
 
 help: ## Show this help
 	@echo "Grounded Answer Engine"
@@ -127,6 +127,9 @@ index-naive: ## Build the naive baseline collection, for A/B comparison
 		--qdrant $(QDRANT) --collection ita_naive
 
 INDEX_PATH ?= data/index
+
+map-sections: ## Populate maps_to_1961 by matching titles across the Acts
+	$(PY) $(BUILDER)/scripts/map_sections.py --db $(DB) --write
 
 index-standalone: ## Build a COMPLETE on-disk index for the self-contained image
 	@rm -rf $(INDEX_PATH)

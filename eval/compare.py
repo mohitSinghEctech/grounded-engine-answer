@@ -33,6 +33,13 @@ SIGNALS = (
     ("answer contains", "contains_expected"),
     ("no fabrication", "no_fabrication"),
     ("answer correct", "answer_correct"),
+    # The path, not the output. A CSV written before trajectory scoring
+    # existed has no such column, and `proportion` returns None for a
+    # signal it cannot find - so old runs still compare cleanly against
+    # new ones, on the signals both of them carry.
+    ("agent used", "agent_used"),
+    ("path correct", "path_correct"),
+    ("no repeat calls", "no_redundant_calls"),
 )
 
 

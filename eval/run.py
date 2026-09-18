@@ -83,6 +83,28 @@ class Result:
     # just logged: a fabricated citation reads exactly like a real one.
     no_fabrication: bool | None = None
 
+    # ── the trajectory ───────────────────────────────────────────────
+    # Everything above scores the OUTPUT. These score the PATH, and they
+    # exist because the two come apart: the agent branch reached SM-01
+    # correctly in one run by mapping the section, and in another by
+    # searching until the answer happened to surface. Same score, and
+    # only one of them is a working agent.
+    tools_called: list[str] = field(default_factory=list)
+    agent_steps: int | None = None
+    redundant_calls: int | None = None
+
+    #: Did the agent handle this at all. None unless the question expects
+    #: it to. False is a ROUTING failure - distinct from a bad path, and
+    #: the exact failure the first keyword list had on all four of these.
+    agent_used: bool | None = None
+
+    #: Did the expected tools appear, in the expected order. None when no
+    #: agent ran, because there is no path to judge.
+    path_correct: bool | None = None
+
+    #: Zero repeated identical calls. Non-zero is the model spinning.
+    no_redundant_calls: bool | None = None
+
 
 def ask(url: str, question: str, tax_year: int | None, timeout: float) -> dict:
     """POST one question to /ask and return the parsed response."""
@@ -150,6 +172,41 @@ def ask_with_retry(
     raise RuntimeError("retry loop exhausted without result")
 
 
+def _score_trajectory(question: dict, result: Result) -> None:
+    """Judge how the answer was reached, when the question says how.
+
+    Scored for every question, refusals included: a refusal the agent
+    reached after calling cannot_answer is a different event from one it
+    reached by giving up on a search, and only the path separates them.
+
+    `expected_tools` is a SUBSEQUENCE, not a set and not the whole list.
+    The order carries the requirement - map_section has to come before
+    get_section, because the number the second call needs is what the
+    first one returns - while extra searches in between are the model
+    working, not the model failing.
+    """
+    expected = question.get("expected_tools") or []
+
+    if expected:
+        result.agent_used = bool(result.tools_called)
+
+    if not result.tools_called:
+        return
+
+    result.no_redundant_calls = (result.redundant_calls or 0) == 0
+
+    if not expected:
+        return
+
+    remaining = list(expected)
+
+    for called in result.tools_called:
+        if remaining and called == remaining[0]:
+            remaining.pop(0)
+
+    result.path_correct = not remaining
+
+
 def score(question: dict, payload: dict) -> Result:
     """Compare one response against the question's expectations.
 
@@ -175,7 +232,12 @@ def score(question: dict, payload: dict) -> Result:
         llm_ms=payload.get("llm_ms"),
         total_tokens=payload.get("total_tokens"),
         finish_reason=payload.get("finish_reason"),
+        tools_called=payload.get("tools_called") or [],
+        agent_steps=payload.get("agent_steps"),
+        redundant_calls=payload.get("redundant_calls"),
     )
+
+    _score_trajectory(question, result)
 
     # Applies to every question, refusals included: inventing a source
     # while declining is still inventing a source.
@@ -249,6 +311,32 @@ def summarise(results: list[Result]) -> None:
 
         if total:
             print(f"  {label} {passed:>3}/{total:<3} {passed / total:>6.0%}")
+
+    # Printed only when an agent actually ran, so a pipeline-only run
+    # reads the same as it always did rather than showing three blanks.
+    trajectory = [
+        ("agent used      ", "agent_used"),
+        ("path correct    ", "path_correct"),
+        ("no repeat calls ", "no_redundant_calls"),
+    ]
+
+    if any(rate(ok, attribute)[1] for _, attribute in trajectory):
+        print("\n  trajectory:")
+
+        for label, attribute in trajectory:
+            passed, total = rate(ok, attribute)
+
+            if total:
+                print(f"  {label} {passed:>3}/{total:<3} {passed / total:>6.0%}")
+
+        agents = [r for r in ok if r.tools_called]
+        steps = sum(r.agent_steps or 0 for r in agents)
+
+        print(
+            f"  {len(agents)} question(s) went through the agent, "
+            f"{steps} model call(s), "
+            f"{sum(len(r.tools_called) for r in agents)} tool call(s)"
+        )
 
     print()
 
@@ -371,6 +459,15 @@ def write_csv(results: list[Result], path: Path) -> None:
                 "grounded",
                 "contains_expected",
                 "no_fabrication",
+                # The path, beside the output. A row where path_correct is
+                # False but retrieval_hit is True is the interesting one:
+                # right answer, wrong route, and it will not hold.
+                "tools_called",
+                "agent_steps",
+                "redundant_calls",
+                "agent_used",
+                "path_correct",
+                "no_redundant_calls",
                 "latency_ms",
                 "retrieval_ms",
                 "llm_ms",
@@ -401,6 +498,12 @@ def write_csv(results: list[Result], path: Path) -> None:
                     r.grounded,
                     r.contains_expected,
                     r.no_fabrication,
+                    " ".join(r.tools_called),
+                    r.agent_steps,
+                    r.redundant_calls,
+                    r.agent_used,
+                    r.path_correct,
+                    r.no_redundant_calls,
                     r.latency_ms,
                     r.retrieval_ms,
                     r.llm_ms,
